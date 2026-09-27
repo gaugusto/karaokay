@@ -59,20 +59,25 @@ class PlayerController(QObject):
             return
         self.player.load(vocals, instrumental)
 
+    @property
+    def is_playing(self) -> bool:
+        return self.player.state is PlayerState.PLAYING
+
     def close(self) -> None:
+        """Fecha o player sem perguntar (a confirmação, quando existe, já
+        aconteceu na janela ou em quem pediu o fechamento)."""
         if self._closing:
             return
         self._closing = True
         self.player.stop()
-        self.view.close()
+        self.view.close_without_asking()
         self.view.deleteLater()
         self.closed.emit()
 
     # --------------------------------------------------------------- sinais
     def _on_loaded(self, duration: float) -> None:
         self.view.set_loading(False)
-        self.view.set_duration(duration)
-        self.player.play()
+        self.view.set_duration(duration)  # pronto para tocar; o play fica com o usuário
 
     def _on_load_failed(self, message: str) -> None:
         self.view.set_loading(False)

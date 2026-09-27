@@ -16,7 +16,7 @@ from karaoke.models import (
 )
 from karaoke.services import DownloadService, LyricsService, SeparationService, is_youtube_url
 from karaoke.controllers.player_controller import PlayerController
-from karaoke.views import MainWindow
+from karaoke.views import MainWindow, dialogs
 
 
 class AppController(QObject):
@@ -48,6 +48,7 @@ class AppController(QObject):
         self.view.url_submitted.connect(self.download)
         self.view.play_requested.connect(self.open_player)
         self.player: PlayerController | None = None
+        self.view.close_guard = self._can_close
 
         self.downloader.progress.connect(self.view.set_download_progress)
         self.downloader.status.connect(self.view.show_message)
@@ -83,6 +84,18 @@ class AppController(QObject):
         self.player = PlayerController(song, parent=self)
         self.player.closed.connect(self._on_player_closed)
         self.player.start()
+
+    def _can_close(self) -> bool:
+        """Ao fechar a janela principal: confirma se há música tocando e
+        fecha o player junto."""
+        if self.player is None:
+            return True
+        if self.player.is_playing and not dialogs.confirm(
+            self.view, "Fechar o Karaokê", "Uma música está tocando. Deseja fechar o programa?"
+        ):
+            return False
+        self.player.close()
+        return True
 
     def _on_player_closed(self) -> None:
         sender = self.sender()

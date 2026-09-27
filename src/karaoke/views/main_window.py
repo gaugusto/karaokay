@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from PySide6.QtCore import QAbstractItemModel, QEvent, QModelIndex, Qt, Signal
 from PySide6.QtWidgets import (
     QLabel,
@@ -110,6 +112,9 @@ class MainWindow(QMainWindow):
         self.progress_bar.hide()
         self.statusBar().addPermanentWidget(self.progress_bar)
 
+        # Definido pelo controlador: decide se a janela pode fechar
+        self.close_guard: Callable[[], bool] | None = None
+
     # ------------------------------------------------------------- modelos
     def set_models(self, pending: QAbstractItemModel, processed: QAbstractItemModel) -> None:
         self.pending_panel.set_model(pending)
@@ -146,3 +151,10 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------ mensagens
     def show_message(self, text: str, timeout_ms: int = 0) -> None:
         self.statusBar().showMessage(text, timeout_ms)
+
+    # --------------------------------------------------------------- fechar
+    def closeEvent(self, event) -> None:
+        if self.close_guard is not None and not self.close_guard():
+            event.ignore()
+            return
+        super().closeEvent(event)

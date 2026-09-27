@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from karaoke.models.lrc import Lyrics
+from karaoke.views import dialogs
 
 DEFAULT_VOCAL_VOLUME = 30         # %
 DEFAULT_INSTRUMENTAL_VOLUME = 100  # %
@@ -184,6 +185,8 @@ class PlayerWindow(QWidget):
         self._current_line = -1
         self._duration = 0.0
         self._slider_held = False
+        self._playing = False
+        self._ask_before_closing = True
 
         self.title_label = QLabel()
         title_font = self.title_label.font()
@@ -280,7 +283,12 @@ class PlayerWindow(QWidget):
             self.position_slider.setValue(int(seconds * 1000))
         self.time_label.setText(f"{format_time(seconds)} / {format_time(self._duration)}")
 
+    @property
+    def is_playing(self) -> bool:
+        return self._playing
+
     def set_playing(self, playing: bool) -> None:
+        self._playing = playing
         icon = QStyle.StandardPixmap.SP_MediaPause if playing else QStyle.StandardPixmap.SP_MediaPlay
         self.play_button.setIcon(self.style().standardIcon(icon))
         self.play_button.setToolTip("Pausar (espaço)" if playing else "Tocar (espaço)")
@@ -329,6 +337,17 @@ class PlayerWindow(QWidget):
         self._slider_held = False
         self.seek_requested.emit(self.position_slider.value() / 1000)
 
+    def close_without_asking(self) -> None:
+        """Fecha sem confirmação (quem chamou já confirmou ou decidiu)."""
+        self._ask_before_closing = False
+        self.close()
+
     def closeEvent(self, event) -> None:
+        if self._playing and self._ask_before_closing and not dialogs.confirm(
+            self, "Fechar o player", "Uma música está tocando. Deseja fechar o player?"
+        ):
+            event.ignore()
+            return
+        self._ask_before_closing = False
         self.closed.emit()
         super().closeEvent(event)

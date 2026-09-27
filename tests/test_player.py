@@ -112,6 +112,7 @@ class FakePlayer(QObject):
         self.calls = []
         self.pos = 0.0
         self.volumes = {}
+        self.state = PlayerState.STOPPED
 
     def load(self, vocals, instrumental):
         self.calls.append(("load", vocals.name, instrumental.name))
@@ -161,7 +162,11 @@ def test_player_controller_flow(song):
     assert player.volumes == {"voz": pytest.approx(0.3), "inst": pytest.approx(1.0)}
 
     player.loaded.emit(60.0)
-    assert ("play",) in player.calls and view.play_button.isEnabled()
+    assert ("play",) not in player.calls  # não toca sozinho
+    assert view.play_button.isEnabled() and view.play_button.toolTip().startswith("Tocar")
+    view.play_button.click()
+    assert player.calls[-1] == ("toggle",)
+    player.state_changed.emit(PlayerState.PLAYING)
     assert view.play_button.toolTip().startswith("Pausar")
 
     player.position_changed.emit(11.0)
@@ -179,9 +184,10 @@ def test_player_controller_flow(song):
     view.seek_relative_requested.emit(5)
     assert player.calls[-1] == ("seek", 25.0)
 
+    player.state_changed.emit(PlayerState.PAUSED)
     closed = []
     ctrl.closed.connect(lambda: closed.append(1))
-    view.close()
+    view.close()  # pausado: fecha sem perguntar
     assert closed == [1] and ("stop",) in player.calls
 
 
@@ -338,3 +344,86 @@ def test_lyrics_current_line_stays_centered(qapp):
 from PySide6.QtCore import Qt  # noqa: E402
 
 from karaoke.views.player_window import SCROLL_ANIMATION_MS as SCROLL_MS  # noqa: E402
+
+
+# ------------------------------------------------------------ confirmações
+@pytest.fixture
+def answers(monkeypatch):
+    """Respostas simuladas para os diálogos de confirmação."""
+    from karaoke.views import dialogs
+
+    state = {"answer": False, "asked": []}
+
+    def fake_confirm(parent, title, text):
+        state["asked"].append(title)
+        return state["answer"]
+
+    monkeypatch.setattr(dialogs, "confirm", fake_confirm)
+    return state
+
+
+def _playing_controller(song):
+    player = FakePlayer()
+    ctrl = PlayerController(song, PlayerWindow(), player)
+    ctrl.start()
+    player.loaded.emit(60.0)
+    player.state_changed.emit(PlayerState.PLAYING)
+    player.state = PlayerState.PLAYING
+    return ctrl, player
+
+
+def test_player_window_asks_before_closing_while_playing(song, answers):
+    ctrl, player = _playing_controller(song)
+    closed = []
+    ctrl.closed.connect(lambda: closed.append(1))
+
+    answers["answer"] = False
+    ctrl.view.close()
+    assert answers["asked"] == ["Fechar o player"]
+    assert closed == [] and ctrl.view.isVisible()  # cancelou: continua aberto
+
+    answers["answer"] = True
+    ctrl.view.close()
+    assert closed == [1] and ("stop",) in player.calls
+
+
+def test_main_window_closes_player_and_asks_if_playing(qapp, dirs, answers, monkeypatch):
+    from test_controller import make
+
+    music, separated = dirs
+    add_song(music, "a.m4a")
+    add_stems(separated, "a")
+    view, app_ctrl = make(dirs)
+    app_ctrl.refresh_library()
+    view.show()
+
+    player = FakePlayer()
+    player.state = PlayerState.PAUSED
+    monkeypatch.setattr(
+        "karaoke.controllers.app_controller.PlayerController",
+        lambda song, parent=None: PlayerController(song, PlayerWindow(), player, parent),
+    )
+    app_ctrl.open_player(str(music / "a.m4a"))
+    player_view = app_ctrl.player.view
+
+    # Pausado: fecha tudo sem perguntar
+    assert view.close()
+    assert answers["asked"] == [] and app_ctrl.player is None
+    assert not player_view.isVisible()
+
+    # Tocando: pergunta; "Não" mantém as duas janelas abertas
+    view.show()
+    app_ctrl.open_player(str(music / "a.m4a"))
+    player.state = PlayerState.PLAYING
+    player.state_changed.emit(PlayerState.PLAYING)
+    answers["answer"] = False
+    assert not view.close()
+    assert answers["asked"] == ["Fechar o Karaokê"]
+    assert view.isVisible() and app_ctrl.player is not None
+
+    # "Sim": fecha a principal e o player, sem uma segunda pergunta do player
+    answers["answer"] = True
+    player_view = app_ctrl.player.view
+    assert view.close()
+    assert answers["asked"] == ["Fechar o Karaokê", "Fechar o Karaokê"]
+    assert app_ctrl.player is None and not player_view.isVisible()
