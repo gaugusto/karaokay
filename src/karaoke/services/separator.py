@@ -7,6 +7,7 @@ import queue
 import shutil
 import subprocess
 import threading
+import warnings
 from pathlib import Path
 
 from PySide6.QtCore import QObject, Signal
@@ -124,6 +125,14 @@ class SeparationService(QObject):
         if self._separator is not None:
             return
         self.status.emit("Carregando o modelo de separação (na primeira vez ele é baixado)…")
+        # O rotary-embedding-torch 0.6 (versão exigida pelo audio-separator) usa
+        # torch.cuda.amp.autocast, que o PyTorch marcou como obsoleto; o aviso é
+        # inofensivo e não há versão compatível sem ele, então é silenciado aqui.
+        warnings.filterwarnings(
+            "ignore",
+            message=r"`torch\.cuda\.amp\.autocast\(args\.\.\.\)` is deprecated",
+            category=FutureWarning,
+        )
         from audio_separator.separator import Separator  # import pesado: só quando precisar
 
         self._hook_progress()
