@@ -152,7 +152,8 @@ src/karaoke/
     lrc.py             leitura de letras LRC (verso e tempo)
   views/         widgets: só exibem dados e emitem sinais
     main_window.py     janela principal
-    song_delegate.py   desenho das músicas nas listas
+    song_delegate.py   cartões das músicas nas listas
+    theme.py           tema escuro (cores, fonte e estilos)
     player_window.py   janela do player
     lyrics_search_dialog.py  busca manual de letra
   controllers/   ligam visões, modelos e serviços

@@ -27,8 +27,10 @@ class _SongListView(QListView):
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.setAlternatingRowColors(True)
         self.setEditTriggers(QListView.EditTrigger.NoEditTriggers)
+        self.setMouseTracking(True)  # destaque do cartão sob o mouse
+        self.setUniformItemSizes(True)
+        self.setVerticalScrollMode(QListView.ScrollMode.ScrollPerPixel)
         # Ctrl/Shift + clique selecionam várias músicas para excluir de uma vez
         self.setSelectionMode(QListView.SelectionMode.ExtendedSelection)
 
@@ -64,13 +66,12 @@ class _SongPanel(QWidget):
         super().__init__(parent)
         self._title = title
         self.header = QLabel()
-        font = self.header.font()
-        font.setBold(True)
-        self.header.setFont(font)
+        self.header.setObjectName("sectionHeader")
         self.view = _SongListView()
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
         layout.addWidget(self.header)
         layout.addWidget(self.view, 1)
 
@@ -101,10 +102,17 @@ class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("Karaokê")
-        self.resize(1024, 640)
+        self.resize(1100, 760)
+
+        # Cabeçalho
+        title = QLabel("Karaokê")
+        title.setObjectName("appTitle")
+        subtitle = QLabel("Cole um link do YouTube: o app baixa o áudio, separa a voz e busca a letra.")
+        subtitle.setObjectName("appSubtitle")
 
         # Barra de links no topo
         self.url_bar = QLineEdit()
+        self.url_bar.setObjectName("urlBar")
         self.url_bar.setPlaceholderText("Cole um link do YouTube e pressione Enter")
         self.url_bar.setClearButtonEnabled(True)
         self.url_bar.returnPressed.connect(self._on_return_pressed)
@@ -125,10 +133,17 @@ class MainWindow(QMainWindow):
         splitter.addWidget(self.pending_panel)
         splitter.addWidget(self.processed_panel)
         splitter.setChildrenCollapsible(False)
+        splitter.setSizes([320, 380])
 
         central = QWidget()
         layout = QVBoxLayout(central)
+        layout.setContentsMargins(28, 22, 28, 16)
+        layout.setSpacing(14)
+        layout.addWidget(title)
+        layout.addWidget(subtitle)
+        layout.addSpacing(4)
         layout.addWidget(self.url_bar)
+        layout.addSpacing(6)
         layout.addWidget(splitter, 1)
         self.setCentralWidget(central)
 
@@ -136,6 +151,7 @@ class MainWindow(QMainWindow):
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setMaximumWidth(220)
+        self.progress_bar.setTextVisible(False)
         self.progress_bar.hide()
         self.statusBar().addPermanentWidget(self.progress_bar)
 
