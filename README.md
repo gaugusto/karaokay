@@ -122,6 +122,9 @@ player. Ele abre pronto para tocar, mas só começa quando você der play.
   no instante em que ele começar a ser cantado. A letra inteira é deslocada e o
   ajuste fica salvo no próprio `.lrc` (tag padrão `[offset:ms]`), valendo nas
   próximas vezes. Esc ou "Cancelar" saem sem mudar nada.
+- **Tela cheia**: botão **⛶**, ou F11; Esc sai (se estiver sincronizando, o
+  primeiro Esc só cancela a sincronização). Ao sair, a janela volta ao tamanho
+  que tinha.
 - **Efeito de fundo** ("aurora"): manchas de luz suaves que se movem devagar e
   brilham um pouco mais quando a música fica mais intensa. É escuro e tem um
   véu na faixa do meio, onde fica o verso atual, para não atrapalhar a leitura.
