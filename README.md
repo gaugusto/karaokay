@@ -112,6 +112,9 @@ player. Ele abre pronto para tocar, mas só começa quando você der play.
   clicar num verso pula para ele. Letras sem sincronia aparecem sem destaque.
 - **Play/pause** (botão ou barra de espaço), barra de posição e setas ← → para
   voltar/avançar 5 s.
+- **Tamanho da letra**: botões **A−** e **A+** ao lado do título (ou Ctrl − /
+  Ctrl +; Ctrl 0 volta ao padrão), de 12 a 48 pt. O tamanho escolhido fica
+  salvo e vale nas próximas vezes (em `~/.config/karaokay/karaoke.ini`).
 - **Volume da voz e do instrumental separados**, de 0 a 100% (a voz começa em
   30%).
 - **Sincronizar** manualmente: se a letra estiver adiantada ou atrasada, clique
