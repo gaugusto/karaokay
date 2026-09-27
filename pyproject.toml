@@ -8,7 +8,12 @@ version = "0.1.0"
 description = "Aplicativo de karaokê em Python/PySide6"
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = ["PySide6>=6.6", "yt-dlp"]
+dependencies = ["PySide6>=6.6", "yt-dlp", "audio-separator"]
+
+[project.optional-dependencies]
+# Escolha uma: pip install -e ".[gpu]" (NVIDIA) ou pip install -e ".[cpu]"
+gpu = ["audio-separator[gpu]"]
+cpu = ["audio-separator[cpu]"]
 
 [project.scripts]
 karaoke = "karaoke.__main__:main"

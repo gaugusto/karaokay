@@ -5,13 +5,19 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import QFileSystemWatcher, Qt
+from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import QListWidget, QListWidgetItem
 
 from karaoke.paths import AUDIO_EXTENSIONS
+from karaoke.separator import is_separated
 
 
 class MusicLibrary(QListWidget):
-    """Mostra todos os arquivos de áudio da pasta e se atualiza sozinha."""
+    """Mostra todos os arquivos de áudio da pasta e se atualiza sozinha.
+
+    Músicas ainda sem vocais separados aparecem em cinza; as que estão sendo
+    processadas mostram o estado ao lado do nome.
+    """
 
     PATH_ROLE = Qt.ItemDataRole.UserRole
 
@@ -19,6 +25,7 @@ class MusicLibrary(QListWidget):
         super().__init__(parent)
         self._folder = folder
         self._folder.mkdir(parents=True, exist_ok=True)
+        self._states: dict[str, str] = {}
         self.setAlternatingRowColors(True)
 
         self._watcher = QFileSystemWatcher([str(self._folder)], self)
@@ -35,17 +42,32 @@ class MusicLibrary(QListWidget):
             key=lambda p: p.stem.casefold(),
         )
 
+    def set_state(self, path: str, state: str | None) -> None:
+        """Define (ou limpa, com None) um estado exibido ao lado da música."""
+        if state:
+            self._states[path] = state
+        else:
+            self._states.pop(path, None)
+        self.refresh()
+
     def refresh(self) -> None:
         current = self.currentItem()
         selected = current.data(self.PATH_ROLE) if current else None
+        dim = self.palette().color(QPalette.ColorRole.PlaceholderText)
 
         self.clear()
         for path in self.songs():
-            item = QListWidgetItem(path.stem)
-            item.setData(self.PATH_ROLE, str(path))
-            item.setToolTip(path.name)
+            key = str(path)
+            state = self._states.get(key)
+            item = QListWidgetItem(f"{path.stem}   — {state}" if state else path.stem)
+            item.setData(self.PATH_ROLE, key)
+            if is_separated(path):
+                item.setToolTip(f"{path.name}\nVocais separados")
+            else:
+                item.setForeground(dim)
+                item.setToolTip(f"{path.name}\nVocais ainda não separados")
             self.addItem(item)
-            if str(path) == selected:
+            if key == selected:
                 self.setCurrentItem(item)
 
     def select_path(self, path: str) -> None:
