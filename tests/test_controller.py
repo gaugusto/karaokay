@@ -41,20 +41,6 @@ class FakeSeparator(QObject):
         self.discarded = getattr(self, "discarded", []) + [str(path)]
 
 
-class FakeLyrics(QObject):
-    started = Signal(str)
-    finished = Signal(str, object, str)
-    failed = Signal(str, str)
-
-    def __init__(self):
-        super().__init__()
-        self.jobs = []
-
-    def enqueue(self, audio, metadata_path, lyrics_base, priority=False):
-        self.jobs.append((str(audio), metadata_path, lyrics_base))
-        self.priorities = getattr(self, "priorities", []) + [priority]
-
-
 def make(dirs):
     music, separated = dirs
     view = MainWindow()
@@ -63,7 +49,6 @@ def make(dirs):
         model=MusicLibraryModel(music, separated),
         downloader=FakeDownloader(),
         separator=FakeSeparator(),
-        lyrics=FakeLyrics(),
     )
     return view, ctrl
 
@@ -151,45 +136,25 @@ def test_failed_song_stays_pending_and_is_not_retried_until_restart(qapp, dirs):
     assert len(ctrl.separator.jobs) == 2
 
 
-def test_lyrics_fetched_after_processing(qapp, dirs):
+def test_lyrics_are_never_fetched_automatically(qapp, dirs, monkeypatch):
+    """Nem ao abrir o app nem depois do processamento: a letra só é buscada
+    pela janela, quando o usuário tenta tocar a música."""
+    import karaoke.services.lyrics as L
+
+    calls = []
+    monkeypatch.setattr(L.LrclibClient, "_request", lambda self, *a, **k: calls.append(a))
     music, separated = dirs
     a = add_song(music, "a.m4a", mtime=10)
+    add_song(music, "pronta.m4a")
+    add_stems(separated, "pronta")
     view, ctrl = make(dirs)
     ctrl.refresh_library()
-    assert ctrl.lyrics.jobs == []  # ainda não processada
-
     ctrl.separator.started.emit(str(a))
     ctrl.separator.finished.emit(str(a))
-    assert len(ctrl.lyrics.jobs) == 1
-    audio, metadata, base = ctrl.lyrics.jobs[0]
-    assert audio == str(a)
-    assert base == music.parent / "letras" / "a"
-    assert metadata == music / ".metadados" / "a.json"
-    assert ctrl.model.song(a).lyrics_state is LyricsState.SEARCHING
-
-    ctrl.lyrics.finished.emit(str(a), LyricsState.SYNCED, "Artista - A")
-    assert ctrl.model.song(a).lyrics_state is LyricsState.SYNCED
-    assert "sincronizada" in view.statusBar().currentMessage()
-
-
-def test_startup_fetches_lyrics_only_for_processed_without_lyrics(qapp, dirs):
-    music, separated = dirs
-    add_song(music, "com.m4a", mtime=1)
-    sem = add_song(music, "sem.m4a", mtime=2)
-    add_song(music, "nova.m4a", mtime=3)
-    add_stems(separated, "com")
-    add_stems(separated, "sem")
-    letras = music.parent / "letras"
-    letras.mkdir()
-    (letras / "com.lrc").write_text("[00:01.00] a\n[00:02.00] b\n[00:03.00] c\n")
-    view, ctrl = make(dirs)
-    ctrl.refresh_library()
-    assert [j[0] for j in ctrl.lyrics.jobs] == [str(sem)]
-    assert ctrl.model.song(music / "com.m4a").lyrics_state is LyricsState.SYNCED
-
-    ctrl.lyrics.finished.emit(str(sem), LyricsState.NOT_FOUND, "")
-    ctrl.refresh_library()  # não repete a busca na mesma sessão
-    assert len(ctrl.lyrics.jobs) == 1
+    assert calls == []
+    assert ctrl.lyrics_search is None
+    assert ctrl.model.song(a).lyrics_state is LyricsState.UNKNOWN
+    assert not (music.parent / "letras").exists()
 
 
 def test_progress_shown_while_processing(qapp, dirs):

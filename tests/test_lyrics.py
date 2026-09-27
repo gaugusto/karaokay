@@ -65,59 +65,6 @@ def rec(track="M", artist="A", duration=200.0, synced=SYNCED, plain=PLAIN, instr
     }
 
 
-def test_choose_best_prefers_synced_then_duration():
-    records = [
-        rec(track="sem sync", synced=None),
-        rec(track="longe", duration=260.0),
-        rec(track="perto", duration=201.0),
-        rec(track="exata sem sync", duration=200.0, synced=None),
-    ]
-    assert L.choose_best(records, 200.0)["trackName"] == "perto"
-
-
-def test_choose_best_rejects_other_versions():
-    assert L.choose_best([rec(duration=320.0)], 200.0) is None
-
-
-class FakeClient:
-    def __init__(self, get=None, search=None):
-        self._get = get or {}
-        self._search = search or {}
-        self.calls = []
-
-    def get(self, track, artist, duration=None):
-        self.calls.append(("get", track, artist, duration))
-        return self._get.get((track, artist))
-
-    def search(self, **params):
-        self.calls.append(("search", params))
-        return self._search.get(tuple(sorted(params.items())), [])
-
-
-def test_find_lyrics_uses_get_first():
-    client = FakeClient(get={("Lugar Ao Sol", "Charlie Brown Jr."): rec("Lugar Ao Sol", "Charlie Brown Jr.")})
-    info = L.TrackInfo(title="Charlie Brown Jr. - Lugar Ao Sol (Clipe Oficial)", duration=200.0)
-    result = L.find_lyrics(client, info)
-    assert result.state is LyricsState.SYNCED
-    assert result.source == "Charlie Brown Jr. - Lugar Ao Sol"
-    assert client.calls == [("get", "Lugar Ao Sol", "Charlie Brown Jr.", 200.0)]
-
-
-def test_find_lyrics_falls_back_to_search_and_plain():
-    q = (("q", "Lugar Ao Sol"),)
-    client = FakeClient(search={q: [rec(synced=None, duration=203.0)]})
-    result = L.find_lyrics(client, L.TrackInfo(title="Lugar Ao Sol [DRhEueqE7Uw]", duration=200.0))
-    assert result.state is LyricsState.PLAIN
-    assert result.text == PLAIN
-
-
-def test_find_lyrics_not_found_and_instrumental():
-    assert L.find_lyrics(FakeClient(), L.TrackInfo(title="Nada")).state is LyricsState.NOT_FOUND
-    client = FakeClient(get={("Solo", "Banda"): rec(synced=None, plain=None, instrumental=True)})
-    info = L.TrackInfo(title="Banda - Solo")
-    assert L.find_lyrics(client, info).state is LyricsState.INSTRUMENTAL
-
-
 def test_save_lyrics_writes_same_name_as_audio(tmp_path):
     base = tmp_path / "letras" / "Lugar Ao Sol [DRhEueqE7Uw]"
     path = L.save_lyrics(L.LyricsResult(LyricsState.PLAIN, PLAIN), base)
@@ -137,20 +84,6 @@ def test_load_track_info_prefers_metadata(tmp_path, monkeypatch):
     assert (info.title, info.artist, info.track, info.channel, info.duration) == ("T", "A", "M", "C", 201.5)
     info = L.load_track_info(tmp_path / "Só o Nome [x].webm", tmp_path / "nao-existe.json")
     assert info.title == "Só o Nome [x]" and info.artist is None
-
-
-def test_service_saves_file_and_reports(qapp, tmp_path, monkeypatch):
-    monkeypatch.setattr(L, "audio_duration", lambda p: 200.0)
-    client = FakeClient(get={("Música", "Artista"): rec("Música", "Artista")})
-    service = L.LyricsService(client)
-    done = []
-    service.finished.connect(lambda path, state, source: done.append((state, source)))
-    base = tmp_path / "letras" / "Artista - Música [abcdefghijk]"
-    audio = tmp_path / "Artista - Música [abcdefghijk].webm"
-    audio.write_bytes(b"x")
-    service._fetch(audio, None, base)
-    assert done == [(LyricsState.SYNCED, "Artista - Música")]
-    assert (tmp_path / "letras" / "Artista - Música [abcdefghijk].lrc").read_text() == SYNCED
 
 
 def test_client_http_against_local_server():

@@ -29,7 +29,7 @@ LYRICS_LABELS = {
 
 # Etiqueta (texto, cor) de cada situação
 _LYRICS_BADGES = {
-    LyricsState.UNKNOWN: ("letra pendente", Colors.TEXT_MUTED),
+    LyricsState.UNKNOWN: ("sem letra", Colors.TEXT_MUTED),
     LyricsState.SEARCHING: ("buscando letra…", Colors.INFO),
     LyricsState.SYNCED: ("letra sincronizada", Colors.SUCCESS),
     LyricsState.PLAIN: ("letra sem sincronia", Colors.WARNING),
@@ -196,7 +196,7 @@ def song_tooltip(index: QModelIndex | QPersistentModelIndex) -> str:
     if song.state is SongState.FAILED and song.error:
         text += f": {song.error}"
     if song.state is SongState.SEPARATED:
-        lyrics = LYRICS_LABELS.get(song.lyrics_state) or "letra ainda não buscada"
+        lyrics = LYRICS_LABELS.get(song.lyrics_state) or "ainda não baixada (a busca abre ao tocar)"
         text += f"\nLetra: {lyrics}"
         if song.lyrics_state is LyricsState.FAILED and song.lyrics_error:
             text += f" ({song.lyrics_error})"

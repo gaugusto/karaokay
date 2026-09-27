@@ -34,6 +34,7 @@ class LyricsSearchController(QObject):
         searcher: ManualLyricsSearch | None = None,
         parent_widget=None,
         parent=None,
+        opening_player: bool = False,
     ) -> None:
         super().__init__(parent)
         self.song = song
@@ -46,6 +47,7 @@ class LyricsSearchController(QObject):
         track, artist = guesses[0] if guesses else (clean_title(info.title), info.artist or "")
         self.view.set_query(artist, track)
         self.view.set_reference_duration(self.duration)
+        self.view.set_opening_player(opening_player)
 
         self.view.search_requested.connect(self._search)
         self.searcher.finished.connect(self._on_results)

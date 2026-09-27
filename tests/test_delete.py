@@ -205,24 +205,3 @@ def test_separation_skips_deleted_and_discards_in_progress(qapp, tmp_path, monke
     assert events == ["started"]  # não publica o resultado
     assert not (tmp_path / "sep" / "a").exists()
     assert not (tmp_path / "trabalho").exists()
-
-
-def test_lyrics_not_saved_for_deleted_song(qapp, tmp_path):
-    from karaoke.services import LyricsService
-
-    class Client:
-        def get(self, track, artist, duration=None):
-            audio.unlink()  # apagada durante a busca
-            return {"trackName": "M", "artistName": "A", "syncedLyrics": "[00:01.00]a\n[00:02.00]b\n[00:03.00]c",
-                    "plainLyrics": "a", "duration": 10}
-
-        def search(self, **params):
-            return []
-
-    audio = tmp_path / "A - M.webm"
-    audio.write_bytes(b"x")
-    service = LyricsService(Client())
-    base = tmp_path / "letras" / "A - M"
-    service._fetch(audio, None, base)
-    assert not (tmp_path / "letras").exists()
-    service._fetch(audio, None, base)  # já não existe: nem começa

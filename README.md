@@ -72,45 +72,40 @@ de "A processar" e é tentada de novo na próxima vez que o app abrir.
 
 ### Letras
 
-Depois de processada, a música ganha a letra do [LRCLIB](https://lrclib.net),
-salva em `letras/` com o mesmo nome do arquivo de áudio:
+As letras **não são baixadas automaticamente**. Quando você abre no player uma
+música que ainda não tem letra, o app abre a janela de busca de letra (ver
+abaixo); o player só abre depois que você escolher uma, e não abre se você
+cancelar. A letra escolhida é salva em `letras/` com o mesmo nome do arquivo de
+áudio:
 
 - `letras/<nome do áudio>.lrc` quando a letra é **sincronizada** (formato LRC,
   com o tempo de cada linha);
-- `letras/<nome do áudio>.txt` quando o LRCLIB só tem a letra **sem sincronia**.
+- `letras/<nome do áudio>.txt` quando é **sem sincronia**.
 
-A busca usa os dados do vídeo guardados no download (título, artista, canal e
-duração, em `músicas/.metadados/`) e a duração real do áudio: primeiro tenta a
-correspondência exata (`/api/get`, ±2 s) e depois a busca livre (`/api/search`),
-preferindo letras sincronizadas e descartando versões com duração muito
-diferente. A sincronia é verificada no próprio texto: a maioria das linhas
-precisa começar com um tempo `[mm:ss.xx]`, com pelo menos três tempos
-diferentes. Na lista "Processadas" aparece a situação da letra de cada música
-(sincronizada, sem sincronia, sem letra…); as que não têm letra sincronizada
-ficam em cinza. A pasta `letras/` não é rastreada pelo git.
+A sincronia é verificada no próprio texto: a maioria das linhas precisa começar
+com um tempo `[mm:ss.xx]`, com pelo menos três tempos diferentes. Na lista
+"Processadas" aparece a situação da letra de cada música. A pasta `letras/` não
+é rastreada pelo git.
+
+### Busca de letra
+
+A janela abre sozinha ao tocar uma música sem letra. Para trocar uma letra
+errada, clique com o botão direito numa música processada e escolha **Buscar
+letra manualmente…**.
+
+A janela já vem preenchida com o melhor palpite de artista e música (a partir
+dos dados do vídeo guardados no download) e mostra os resultados do LRCLIB;
+ajuste o texto e aperte Enter para buscar de novo. Os resultados mostram álbum,
+duração (com a diferença para o áudio) e se a letra é sincronizada; as
+sincronizadas de duração mais parecida aparecem primeiro. Selecione um
+resultado para ver a letra e clique em **Usar esta letra** (ou **Usar e abrir o
+player**). Nada é salvo sem essa escolha. A janela pode ser redimensionada e
+maximizada, e abre do mesmo tamanho da última vez.
 
 ### Player
 
 Dê dois cliques (ou Enter) numa música da lista "Processadas" para abrir o
 player. Ele abre pronto para tocar, mas só começa quando você der play.
-
-Se a música ainda não tem letra baixada, o app tenta buscá-la de novo no LRCLIB
-antes de abrir o player (essa busca passa na frente das outras). Se encontrar,
-o player abre; se não, um aviso explica o motivo (não encontrada, instrumental
-ou erro de conexão) e o player não é aberto. O aviso oferece **Buscar
-manualmente…**.
-
-### Busca manual de letra
-
-Quando a busca automática falha ou traz a letra errada, clique com o botão
-direito numa música processada e escolha **Buscar letra manualmente…** (ou use
-o botão do aviso acima). A janela já vem preenchida com o melhor palpite de
-artista e música e faz a primeira busca; ajuste o texto e aperte Enter para
-buscar de novo. Os resultados mostram álbum, duração (com a diferença para o
-áudio) e se a letra é sincronizada; as sincronizadas de duração mais parecida
-aparecem primeiro. Selecione um resultado para ver a letra e clique em **Usar
-esta letra**: ela é salva em `letras/` (substituindo a anterior) e, se você
-estava tentando abrir o player, ele abre em seguida.
 
 - **Letra sincronizada** destacada verso a verso: o verso atual fica sempre no
   meio da tela e a letra vai subindo, com animação, conforme os versos passam;
@@ -136,6 +131,8 @@ app antes de ir para a placa de som, então os dois nunca se dessincronizam e a
 mudança de volume vale na hora. A posição usada para destacar a letra é o tempo
 que a placa de som já tocou de fato, o que desconta o buffer e a latência.
 
+### Modelo de separação
+
 Na primeira separação o modelo (algumas centenas de MB) é baixado para `modelos/`,
 também fora do git. Se o app for fechado no meio de uma separação, ela é refeita
 na próxima vez que ele abrir.
@@ -157,13 +154,13 @@ src/karaoke/
     player_window.py   janela do player
     lyrics_search_dialog.py  busca manual de letra
   controllers/   ligam visões, modelos e serviços
-    app_controller.py  download, fila de processamento, letras e exclusão
+    app_controller.py  download, fila de processamento, exclusão e letras
     player_controller.py  player: áudio, letra e controles
     lyrics_search_controller.py  busca manual de letra
   services/      integrações externas, rodando em segundo plano
     downloader.py      yt-dlp
     separator.py       audio-separator (BS-RoFormer)
-    lyrics.py          busca de letras no LRCLIB
+    lyrics.py          busca de letras no LRCLIB (pela janela de busca)
     stem_player.py     mistura e reprodução de vocais + instrumental
     files.py           remoção dos arquivos de uma música
   paths.py       pastas do projeto

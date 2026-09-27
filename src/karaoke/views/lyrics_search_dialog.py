@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QDialog,
@@ -50,13 +50,31 @@ class LyricsSearchDialog(QDialog):
 
     search_requested = Signal(str, str)  # artista, música
 
+    _last_size: QSize | None = None  # tamanho usado da última vez (na sessão)
+
     def __init__(self, song_title: str, parent=None) -> None:
         super().__init__(parent)
         self.setWindowTitle(f"Buscar letra — {song_title}")
-        self.resize(820, 600)
+        # Janela comum (não "diálogo preso"): o gerenciador de janelas deixa
+        # redimensionar e maximizar; a alça no canto também redimensiona.
+        self.setWindowFlags(
+            Qt.WindowType.Window
+            | Qt.WindowType.WindowTitleHint
+            | Qt.WindowType.WindowSystemMenuHint
+            | Qt.WindowType.WindowMinMaxButtonsHint
+            | Qt.WindowType.WindowCloseButtonHint
+        )
+        self.setSizeGripEnabled(True)
+        self.setMinimumSize(560, 420)
+        self.resize(LyricsSearchDialog._last_size or QSize(860, 640))
         self._records: list[dict] = []
         self._kinds: list[LyricsState] = []
         self._duration: float | None = None
+
+        self.context_note = QLabel()
+        self.context_note.setObjectName("hint")
+        self.context_note.setWordWrap(True)
+        self.context_note.hide()
 
         intro = QLabel(
             f"Digite o artista e o nome da música para procurar a letra de <b>{song_title}</b> no LRCLIB."
@@ -116,6 +134,7 @@ class LyricsSearchDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(22, 20, 22, 18)
         layout.setSpacing(12)
+        layout.addWidget(self.context_note)
         layout.addWidget(intro)
         layout.addLayout(form)
         layout.addWidget(self.status_label)
@@ -123,6 +142,14 @@ class LyricsSearchDialog(QDialog):
         layout.addWidget(self.buttons)
 
     # ------------------------------------------------------------ conteúdo
+    def set_opening_player(self, opening: bool) -> None:
+        """Aberta ao tentar tocar uma música sem letra: explica e muda o botão."""
+        self.context_note.setVisible(opening)
+        self.context_note.setText(
+            "Esta música ainda não tem letra. Escolha uma para abrir o player." if opening else ""
+        )
+        self.use_button.setText("Usar e abrir o player" if opening else "Usar esta letra")
+
     def set_query(self, artist: str, track: str) -> None:
         self.artist_edit.setText(artist)
         self.track_edit.setText(track)
@@ -204,3 +231,7 @@ class LyricsSearchDialog(QDialog):
     def _accept_if_usable(self) -> None:
         if self.use_button.isEnabled():
             self.accept()
+
+    def done(self, result: int) -> None:
+        LyricsSearchDialog._last_size = self.size()  # próxima janela abre do mesmo tamanho
+        super().done(result)
