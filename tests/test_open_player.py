@@ -31,7 +31,16 @@ def env(qapp, dirs, monkeypatch):
             pass
 
     monkeypatch.setattr(app_module, "PlayerController", Recorder)
-    monkeypatch.setattr(dialogs, "inform", lambda parent, title, text: informed.append((title, text)))
+    manual = []
+    offer_answer = {"value": False}
+
+    def fake_offer(parent, title, text, action):
+        informed.append((title, text))
+        return offer_answer["value"]
+
+    monkeypatch.setattr(dialogs, "offer", fake_offer)
+    monkeypatch.setattr(app_module.AppController, "open_manual_search",
+                        lambda self, path, open_player_after=False: manual.append((path, open_player_after)))
 
     music, separated = dirs
     add_song(music, "sem.m4a")
@@ -45,7 +54,7 @@ def env(qapp, dirs, monkeypatch):
     view, ctrl = make(dirs)
     ctrl.refresh_library()
     return {"view": view, "ctrl": ctrl, "music": music, "letras": letras,
-            "opened": opened, "informed": informed}
+            "opened": opened, "informed": informed, "manual": manual, "offer": offer_answer}
 
 
 def test_song_with_lyrics_opens_right_away(env):
@@ -95,6 +104,17 @@ def test_player_not_opened_when_lyrics_cannot_be_fetched(env, outcome, expected)
     (title, text), = env["informed"]
     assert title == "Letra não encontrada"
     assert '"sem"' in text and expected in text and "não será aberto" in text
+    assert env["manual"] == []  # escolheu "Fechar"
+
+
+def test_not_found_warning_offers_manual_search(env):
+    ctrl = env["ctrl"]
+    path = str(env["music"] / "sem.m4a")
+    env["offer"]["value"] = True  # clicou em "Buscar manualmente…"
+    ctrl.open_player(path)
+    ctrl.lyrics.finished.emit(path, LyricsState.NOT_FOUND, "")
+    assert env["manual"] == [(path, True)]  # abre o player depois de escolher
+    assert env["opened"] == []
 
 
 def test_only_the_awaited_song_opens(env):

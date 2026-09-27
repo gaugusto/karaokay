@@ -21,6 +21,7 @@ from karaoke.services import (
     delete_paths,
     is_youtube_url,
 )
+from karaoke.controllers.lyrics_search_controller import LyricsSearchController
 from karaoke.controllers.player_controller import PlayerController
 from karaoke.views import MainWindow, dialogs
 
@@ -54,8 +55,10 @@ class AppController(QObject):
         self.view.url_submitted.connect(self.download)
         self.view.play_requested.connect(self.open_player)
         self.view.delete_requested.connect(self.delete_songs)
+        self.view.manual_lyrics_requested.connect(self.open_manual_search)
         self.player: PlayerController | None = None
         self._open_after_lyrics: str | None = None  # música esperando a letra para abrir
+        self.lyrics_search: LyricsSearchController | None = None
         self.view.close_guard = self._can_close
 
         self.downloader.progress.connect(self.view.set_download_progress)
@@ -135,6 +138,8 @@ class AppController(QObject):
             self.player.close()
         if self._open_after_lyrics in {str(s.path) for s in songs}:
             self._open_after_lyrics = None
+        if self.lyrics_search is not None and self.lyrics_search.song.path in {s.path for s in songs}:
+            self.lyrics_search.view.reject()
         errors = []
         for song in songs:
             if song.state in (SongState.QUEUED, SongState.SEPARATING):
@@ -284,9 +289,42 @@ class AppController(QObject):
             LyricsState.FAILED: f"Erro ao buscar a letra: {song.lyrics_error or 'desconhecido'}.",
         }
         reason = reasons.get(song.lyrics_state, "A letra não pôde ser baixada.")
-        dialogs.inform(
+        if dialogs.offer(
             self.view,
             "Letra não encontrada",
             f"Não foi possível baixar a letra de \"{song.title}\".\n\n{reason}\n\n"
-            "O player não será aberto.",
-        )
+            "O player não será aberto. Você pode procurar a letra digitando o artista "
+            "e o nome da música.",
+            "Buscar manualmente…",
+        ):
+            self.open_manual_search(path, open_player_after=True)
+
+    # ------------------------------------------------------- busca manual
+    def open_manual_search(self, path: str, open_player_after: bool = False) -> None:
+        """Janela para procurar a letra digitando artista e música. Com
+        ``open_player_after``, o player abre assim que uma letra for escolhida."""
+        song = self.model.song(path)
+        if song is None or song.state is not SongState.SEPARATED:
+            return
+        if self.lyrics_search is not None:
+            self.lyrics_search.view.reject()  # uma busca por vez
+        search = LyricsSearchController(song, parent_widget=self.view, parent=self)
+        search.saved.connect(lambda state: self._on_manual_lyrics_saved(search, state, open_player_after))
+        search.cancelled.connect(lambda: self._close_manual_search(search))
+        self.lyrics_search = search
+        search.start()
+
+    def _on_manual_lyrics_saved(self, search, state, open_player_after: bool) -> None:
+        song = search.song
+        self._close_manual_search(search)
+        self.model.set_lyrics_state(song.path, state)
+        kind = "sincronizada" if state is LyricsState.SYNCED else "sem sincronia"
+        self.view.show_message(f"Letra {kind} salva para {song.title}", 8000)
+        if open_player_after and self.model.song(song.path) is not None:
+            self._start_player(song)
+
+    def _close_manual_search(self, search) -> None:
+        if self.lyrics_search is search:
+            self.lyrics_search = None
+        search.view.deleteLater()
+        search.deleteLater()

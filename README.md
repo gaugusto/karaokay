@@ -97,7 +97,20 @@ player. Ele abre pronto para tocar, mas só começa quando você der play.
 Se a música ainda não tem letra baixada, o app tenta buscá-la de novo no LRCLIB
 antes de abrir o player (essa busca passa na frente das outras). Se encontrar,
 o player abre; se não, um aviso explica o motivo (não encontrada, instrumental
-ou erro de conexão) e o player não é aberto.
+ou erro de conexão) e o player não é aberto. O aviso oferece **Buscar
+manualmente…**.
+
+### Busca manual de letra
+
+Quando a busca automática falha ou traz a letra errada, clique com o botão
+direito numa música processada e escolha **Buscar letra manualmente…** (ou use
+o botão do aviso acima). A janela já vem preenchida com o melhor palpite de
+artista e música e faz a primeira busca; ajuste o texto e aperte Enter para
+buscar de novo. Os resultados mostram álbum, duração (com a diferença para o
+áudio) e se a letra é sincronizada; as sincronizadas de duração mais parecida
+aparecem primeiro. Selecione um resultado para ver a letra e clique em **Usar
+esta letra**: ela é salva em `letras/` (substituindo a anterior) e, se você
+estava tentando abrir o player, ele abre em seguida.
 
 - **Letra sincronizada** destacada verso a verso: o verso atual fica sempre no
   meio da tela e a letra vai subindo, com animação, conforme os versos passam;
@@ -141,9 +154,11 @@ src/karaoke/
     main_window.py     janela principal
     song_delegate.py   desenho das músicas nas listas
     player_window.py   janela do player
+    lyrics_search_dialog.py  busca manual de letra
   controllers/   ligam visões, modelos e serviços
     app_controller.py  download, fila de processamento, letras e exclusão
     player_controller.py  player: áudio, letra e controles
+    lyrics_search_controller.py  busca manual de letra
   services/      integrações externas, rodando em segundo plano
     downloader.py      yt-dlp
     separator.py       audio-separator (BS-RoFormer)
