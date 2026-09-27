@@ -6,6 +6,7 @@ from PySide6.QtCore import QEasingCurve, QPropertyAnimation, QSize, Qt, QTimer, 
 from PySide6.QtGui import QColor, QFont, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QListWidget,
@@ -20,6 +21,7 @@ from PySide6.QtWidgets import (
 
 from karaoke.models.lrc import Lyrics
 from karaoke.views import dialogs
+from karaoke.views.theme import Colors, media_icon
 
 DEFAULT_VOCAL_VOLUME = 30         # %
 DEFAULT_INSTRUMENTAL_VOLUME = 100  # %
@@ -177,12 +179,12 @@ class PlayerWindow(QWidget):
     sync_line_clicked = Signal(int)          # verso clicado no modo de sincronização
     closed = Signal()
 
-    LINE_FONT_SIZE = 18
+    LINE_FONT_SIZE = 20
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Karaokê — Player")
-        self.resize(760, 620)
+        self.resize(860, 700)
         self._lyrics = Lyrics()
         self._current_line = -1
         self._duration = 0.0
@@ -196,11 +198,9 @@ class PlayerWindow(QWidget):
         self._note_timer.timeout.connect(self._restore_note)
         self._base_note = ""
 
+        self.setObjectName("playerWindow")
         self.title_label = QLabel()
-        title_font = self.title_label.font()
-        title_font.setPointSize(title_font.pointSize() + 4)
-        title_font.setBold(True)
-        self.title_label.setFont(title_font)
+        self.title_label.setObjectName("songTitle")
         self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.title_label.setWordWrap(True)
 
@@ -213,7 +213,9 @@ class PlayerWindow(QWidget):
 
         # Controles
         self.play_button = QPushButton()
-        self.play_button.setFixedWidth(48)
+        self.play_button.setObjectName("playButton")
+        self.play_button.setFixedSize(56, 56)
+        self.play_button.setIconSize(QSize(26, 26))
         self.play_button.clicked.connect(self.toggle_requested)
         self.set_playing(False)
 
@@ -236,23 +238,38 @@ class PlayerWindow(QWidget):
         self.instrumental_volume = _VolumeSlider("Instrumental", DEFAULT_INSTRUMENTAL_VOLUME)
         self.instrumental_volume.changed.connect(self.instrumental_volume_changed)
 
+        self.time_label.setMinimumWidth(96)
+        self.time_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+
         transport = QHBoxLayout()
+        transport.setSpacing(14)
         transport.addWidget(self.play_button)
         transport.addWidget(self.position_slider, 1)
         transport.addWidget(self.time_label)
         transport.addWidget(self.sync_button)
 
         volumes = QHBoxLayout()
+        volumes.setSpacing(14)
         volumes.addWidget(self.vocal_volume, 1)
         volumes.addSpacing(24)
         volumes.addWidget(self.instrumental_volume, 1)
 
+        # Controles agrupados num cartão
+        controls = QFrame()
+        controls.setObjectName("card")
+        controls_layout = QVBoxLayout(controls)
+        controls_layout.setContentsMargins(20, 16, 20, 16)
+        controls_layout.setSpacing(12)
+        controls_layout.addLayout(transport)
+        controls_layout.addLayout(volumes)
+
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(28, 22, 28, 22)
+        layout.setSpacing(12)
         layout.addWidget(self.title_label)
         layout.addWidget(self.lyrics_note)
         layout.addWidget(self.lyrics_view, 1)
-        layout.addLayout(transport)
-        layout.addLayout(volumes)
+        layout.addWidget(controls)
 
         # Atalhos: espaço = play/pause, setas = voltar/avançar 5 s
         QShortcut(QKeySequence(Qt.Key.Key_Space), self, self.toggle_requested.emit)
@@ -360,8 +377,7 @@ class PlayerWindow(QWidget):
 
     def set_playing(self, playing: bool) -> None:
         self._playing = playing
-        icon = QStyle.StandardPixmap.SP_MediaPause if playing else QStyle.StandardPixmap.SP_MediaPlay
-        self.play_button.setIcon(self.style().standardIcon(icon))
+        self.play_button.setIcon(media_icon("pause" if playing else "play"))
         self.play_button.setToolTip("Pausar (espaço)" if playing else "Tocar (espaço)")
 
     def highlight_line(self, index: int) -> None:
@@ -387,13 +403,12 @@ class PlayerWindow(QWidget):
         font.setPointSize(self.LINE_FONT_SIZE + (6 if current else 0))
         font.setBold(current)
         item.setFont(font)
-        palette = self.lyrics_view.palette()
         if current:
-            item.setForeground(palette.highlight())
+            item.setForeground(QColor(Colors.ACCENT_HOVER))
         elif self._lyrics.synced:
-            item.setForeground(QColor(palette.placeholderText().color()))
+            item.setForeground(QColor(Colors.TEXT_MUTED))
         else:
-            item.setForeground(palette.text())
+            item.setForeground(QColor(Colors.TEXT_SECONDARY))
 
     # ------------------------------------------------------------ eventos
     def _on_line_clicked(self, index: int) -> None:

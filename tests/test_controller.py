@@ -193,8 +193,7 @@ def test_startup_fetches_lyrics_only_for_processed_without_lyrics(qapp, dirs):
 
 
 def test_progress_shown_while_processing(qapp, dirs):
-    from karaoke.views.song_delegate import PendingSongDelegate
-    from PySide6.QtWidgets import QStyleOptionViewItem
+    from karaoke.views.song_delegate import pending_badge, queue_position
 
     music, _ = dirs
     a = add_song(music, "a.m4a", mtime=10)
@@ -202,12 +201,10 @@ def test_progress_shown_while_processing(qapp, dirs):
     ctrl.refresh_library()
     ctrl.separator.started.emit(str(a))
     ctrl.separator.progress.emit(str(a), 42)
-    assert ctrl.model.song(a).progress == 42
-
-    delegate = PendingSongDelegate()
-    option = QStyleOptionViewItem()
-    delegate.initStyleOption(option, ctrl.pending.index_of(a))
-    assert option.text == "1.  a   — processando… 42%"
+    song = ctrl.model.song(a)
+    assert song.progress == 42
+    assert pending_badge(song)[0] == "processando 42%"
+    assert queue_position(song, ctrl.pending.index_of(a).row()) == 1
 
     ctrl.separator.finished.emit(str(a))
     assert ctrl.model.song(a).progress is None

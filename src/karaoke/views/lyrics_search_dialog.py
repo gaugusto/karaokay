@@ -69,6 +69,7 @@ class LyricsSearchDialog(QDialog):
         for edit in (self.artist_edit, self.track_edit):
             edit.returnPressed.connect(self._request_search)
         self.search_button = QPushButton("Buscar")
+        self.search_button.setObjectName("primary")
         self.search_button.clicked.connect(self._request_search)
 
         form = QFormLayout()
@@ -107,11 +108,14 @@ class LyricsSearchDialog(QDialog):
         self.buttons = QDialogButtonBox()
         self.use_button = self.buttons.addButton("Usar esta letra", QDialogButtonBox.ButtonRole.AcceptRole)
         self.buttons.addButton("Cancelar", QDialogButtonBox.ButtonRole.RejectRole)
+        self.use_button.setObjectName("primary")
         self.use_button.setEnabled(False)
         self.buttons.accepted.connect(self._accept_if_usable)
         self.buttons.rejected.connect(self.reject)
 
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(22, 20, 22, 18)
+        layout.setSpacing(12)
         layout.addWidget(intro)
         layout.addLayout(form)
         layout.addWidget(self.status_label)
@@ -140,6 +144,7 @@ class LyricsSearchDialog(QDialog):
         self._records, self._kinds = records, kinds
         self.table.setRowCount(0)
         self.preview.clear()
+        self.use_button.setObjectName("primary")
         self.use_button.setEnabled(False)
         for row, (record, kind) in enumerate(zip(records, kinds)):
             self.table.insertRow(row)

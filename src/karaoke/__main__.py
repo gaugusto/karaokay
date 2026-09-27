@@ -6,11 +6,13 @@ from PySide6.QtWidgets import QApplication
 
 from karaoke.controllers import AppController
 from karaoke.views import MainWindow
+from karaoke.views.theme import apply_theme
 
 
 def main() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName("Karaokê")
+    apply_theme(app)
     window = MainWindow()
     controller = AppController(window)
     controller.start()
