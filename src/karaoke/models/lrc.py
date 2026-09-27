@@ -23,6 +23,14 @@ class LyricLine:
 class Lyrics:
     lines: tuple[LyricLine, ...] = ()
     synced: bool = False
+    offset: float = 0.0  # segundos da tag [offset:] já aplicados aos tempos
+
+    def first_sung_line(self) -> int:
+        """Índice do primeiro verso com texto (pula linhas vazias/instrumentais)."""
+        for index, line in enumerate(self.lines):
+            if line.text.strip():
+                return index
+        return 0 if self.lines else -1
 
     def line_at(self, seconds: float) -> int:
         """Índice do verso que está sendo cantado em ``seconds`` (-1 antes do 1º)."""
@@ -41,14 +49,16 @@ def parse_lrc(text: str) -> Lyrics:
     """Converte um texto LRC em versos ordenados pelo tempo.
 
     Aceita vários tempos na mesma linha ([00:10.00][01:20.00]refrão) e a
-    tag [offset:ms] (positivo adianta a letra).
+    tag [offset:ms] (positivo adianta a letra), onde quer que ela esteja.
     """
     offset = 0.0
-    lines: list[LyricLine] = []
     for raw in text.splitlines():
         match = _OFFSET.match(raw)
         if match:
             offset = int(match.group(1)) / 1000
+    lines: list[LyricLine] = []
+    for raw in text.splitlines():
+        if _OFFSET.match(raw):
             continue
         rest = raw.strip()
         stamps = []
@@ -58,7 +68,23 @@ def parse_lrc(text: str) -> Lyrics:
         for stamp in stamps:
             lines.append(LyricLine(max(0.0, stamp - offset), rest))
     lines.sort(key=lambda line: line.time)
-    return Lyrics(tuple(lines), synced=bool(lines))
+    return Lyrics(tuple(lines), synced=bool(lines), offset=offset)
+
+
+def write_lrc_offset(path: Path, offset: float) -> None:
+    """Grava a tag [offset:ms] no .lrc (substitui a anterior).
+
+    Pela convenção do LRC, o tempo exibido é ``tempo_do_verso - offset``:
+    um offset positivo adianta a letra, negativo atrasa.
+    """
+    text = path.read_text(encoding="utf-8", errors="replace")
+    lines = [line for line in text.splitlines() if not _OFFSET.match(line)]
+    ms = round(offset * 1000)
+    if ms:
+        lines.insert(0, f"[offset:{ms:+d}]")
+    temp = path.with_name(path.name + ".tmp")
+    temp.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+    temp.replace(path)
 
 
 def plain_lyrics(text: str) -> Lyrics:

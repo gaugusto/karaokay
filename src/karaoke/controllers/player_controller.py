@@ -6,7 +6,7 @@ import re
 
 from PySide6.QtCore import QObject, Signal
 
-from karaoke.models import Song, load_lyrics
+from karaoke.models import Song, load_lyrics, write_lrc_offset
 from karaoke.services import PlayerState, StemPlayer
 from karaoke.views.player_window import PlayerWindow
 
@@ -42,6 +42,8 @@ class PlayerController(QObject):
         # Começa com os volumes que a janela mostra (voz em 30%)
         self.player.set_vocal_volume(self.view.vocal_volume.volume)
         self.player.set_instrumental_volume(self.view.instrumental_volume.volume)
+        self.view.sync_mode_toggled.connect(self._on_sync_mode_toggled)
+        self.view.sync_line_clicked.connect(self._on_sync_line_clicked)
         self.view.closed.connect(self.close)
 
         self.player.loaded.connect(self._on_loaded)
@@ -85,7 +87,41 @@ class PlayerController(QObject):
 
     def _on_position(self, seconds: float) -> None:
         self.view.set_position(seconds)
-        self.view.highlight_line(self.lyrics.line_at(seconds))
+        if not self.view.in_sync_mode:
+            self.view.highlight_line(self.lyrics.line_at(seconds))
+
+    # -------------------------------------------------- sincronização manual
+    def _on_sync_mode_toggled(self, active: bool) -> None:
+        if active and not self.lyrics.synced:
+            self.view.set_sync_mode(False)
+            return
+        self.view.set_sync_mode(active, self.lyrics.first_sung_line())
+        if not active:
+            self._on_position(self.player.position())
+
+    def _on_sync_line_clicked(self, index: int) -> None:
+        """O usuário clicou no primeiro verso no instante em que ele começou:
+        desloca a letra inteira para esse verso cair nesse instante."""
+        first = self.lyrics.first_sung_line()
+        if index != first:
+            self.view.show_notice("Clique no primeiro verso (marcado com ▶)", 3000)
+            return
+        path = self.song.lyrics_path
+        if path is None:
+            return
+        shift = self.player.position() - self.lyrics.lines[first].time
+        try:
+            write_lrc_offset(path, self.lyrics.offset - shift)
+        except OSError as exc:
+            self.view.set_sync_mode(False)
+            self.view.show_notice(f"Não foi possível salvar o ajuste: {exc}", 6000)
+            return
+        self.lyrics = load_lyrics(path)
+        self.view.set_sync_mode(False)
+        self.view.set_lyrics(self.lyrics)
+        self._on_position(self.player.position())
+        direction = "atrasada" if shift > 0 else "adiantada"
+        self.view.show_notice(f"Letra sincronizada: {direction} em {abs(shift):.2f} s".replace(".", ","))
 
     def _on_state(self, state: PlayerState) -> None:
         self.view.set_playing(state is PlayerState.PLAYING)
