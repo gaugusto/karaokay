@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 import json
 import queue
 import re
@@ -237,7 +238,11 @@ def save_lyrics(result: LyricsResult, base: Path) -> Path | None:
 
 # ---------------------------------------------------------------- serviço
 class LyricsService(QObject):
-    """Busca as letras numa thread de fundo, uma música por vez, em ordem."""
+    """Busca as letras numa thread de fundo, uma música por vez, em ordem.
+
+    Pedidos com ``priority=True`` (alguém esperando para abrir o player)
+    passam na frente dos demais.
+    """
 
     started = Signal(str)                   # caminho da música
     finished = Signal(str, object, str)     # caminho, LyricsState, origem ("Artista - Música")
@@ -246,15 +251,24 @@ class LyricsService(QObject):
     def __init__(self, client: LrclibClient | None = None, parent=None) -> None:
         super().__init__(parent)
         self._client = client or LrclibClient()
-        self._queue: queue.Queue[tuple[Path, Path | None, Path]] = queue.Queue()
+        self._queue: queue.PriorityQueue = queue.PriorityQueue()
+        self._order = itertools.count()  # desempate: ordem de chegada
         threading.Thread(target=self._loop, name="letras", daemon=True).start()
 
-    def enqueue(self, audio: str | Path, metadata_path: Path | None, lyrics_base: Path) -> None:
-        self._queue.put((Path(audio), metadata_path, lyrics_base))
+    def enqueue(
+        self,
+        audio: str | Path,
+        metadata_path: Path | None,
+        lyrics_base: Path,
+        priority: bool = False,
+    ) -> None:
+        job = (Path(audio), metadata_path, lyrics_base)
+        self._queue.put((0 if priority else 1, next(self._order), job))
 
     def _loop(self) -> None:
         while True:
-            self._fetch(*self._queue.get())
+            _priority, _order, job = self._queue.get()
+            self._fetch(*job)
 
     def _fetch(self, audio: Path, metadata_path: Path | None, lyrics_base: Path) -> None:
         if not audio.exists():

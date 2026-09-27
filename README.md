@@ -94,6 +94,11 @@ ficam em cinza. A pasta `letras/` não é rastreada pelo git.
 Dê dois cliques (ou Enter) numa música da lista "Processadas" para abrir o
 player. Ele abre pronto para tocar, mas só começa quando você der play.
 
+Se a música ainda não tem letra baixada, o app tenta buscá-la de novo no LRCLIB
+antes de abrir o player (essa busca passa na frente das outras). Se encontrar,
+o player abre; se não, um aviso explica o motivo (não encontrada, instrumental
+ou erro de conexão) e o player não é aberto.
+
 - **Letra sincronizada** destacada verso a verso: o verso atual fica sempre no
   meio da tela e a letra vai subindo, com animação, conforme os versos passam;
   clicar num verso pula para ele. Letras sem sincronia aparecem sem destaque.

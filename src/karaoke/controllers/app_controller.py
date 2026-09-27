@@ -55,6 +55,7 @@ class AppController(QObject):
         self.view.play_requested.connect(self.open_player)
         self.view.delete_requested.connect(self.delete_songs)
         self.player: PlayerController | None = None
+        self._open_after_lyrics: str | None = None  # música esperando a letra para abrir
         self.view.close_guard = self._can_close
 
         self.downloader.progress.connect(self.view.set_download_progress)
@@ -82,10 +83,23 @@ class AppController(QObject):
 
     # ------------------------------------------------------------------ player
     def open_player(self, path: str) -> None:
-        """Abre o player (dois cliques numa música processada)."""
+        """Abre o player (dois cliques numa música processada).
+
+        Sem letra baixada, tenta buscá-la antes (com prioridade); o player só
+        abre se a letra for encontrada.
+        """
         song = self.model.song(path)
         if song is None or song.state is not SongState.SEPARATED:
             return
+        if song.lyrics_path is None:
+            self._open_after_lyrics = str(song.path)
+            self.view.show_message(f"Buscando a letra de {song.title} antes de abrir o player…")
+            self._queue_lyrics(song.path, priority=True, retry=True)
+            return
+        self._open_after_lyrics = None
+        self._start_player(song)
+
+    def _start_player(self, song) -> None:
         if self.player is not None:
             self.player.close()  # um player por vez
         self.player = PlayerController(song, parent=self)
@@ -119,6 +133,8 @@ class AppController(QObject):
 
         if self.player is not None and self.player.song.path in {s.path for s in songs}:
             self.player.close()
+        if self._open_after_lyrics in {str(s.path) for s in songs}:
+            self._open_after_lyrics = None
         errors = []
         for song in songs:
             if song.state in (SongState.QUEUED, SongState.SEPARATING):
@@ -218,12 +234,18 @@ class AppController(QObject):
     # ------------------------------------------------------------------ letras
     # Depois de processada, a música ganha a letra do LRCLIB (em outra fila,
     # para a busca na internet não atrasar a separação da próxima música).
-    def _queue_lyrics(self, path: Path) -> None:
+    def _queue_lyrics(self, path: Path, priority: bool = False, retry: bool = False) -> None:
+        """Busca a letra. Normalmente só uma vez por sessão; ``retry`` busca de
+        novo mesmo que antes não tenha sido encontrada."""
         song = self.model.song(path)
-        if song is None or song.lyrics_state is not LyricsState.UNKNOWN:
+        if song is None:
+            return
+        if song.lyrics_state is LyricsState.SEARCHING and not priority:
+            return
+        if song.lyrics_state is not LyricsState.UNKNOWN and not retry:
             return
         self.model.set_lyrics_state(path, LyricsState.SEARCHING)
-        self.lyrics.enqueue(path, song.metadata_path, song.lyrics_base)
+        self.lyrics.enqueue(path, song.metadata_path, song.lyrics_base, priority=priority)
 
     def _on_lyrics_started(self, path: str) -> None:
         self.model.set_lyrics_state(path, LyricsState.SEARCHING)
@@ -238,7 +260,33 @@ class AppController(QObject):
         }
         detail = f" ({source})" if source else ""
         self.view.show_message(f"{Path(path).stem}: {messages.get(state, '')}{detail}", 8000)
+        self._open_if_waiting(path)
 
     def _on_lyrics_failed(self, path: str, message: str) -> None:
         self.model.set_lyrics_state(path, LyricsState.FAILED, message)
         self.view.show_message(f"Erro ao buscar a letra de {Path(path).stem}: {message}", 10000)
+        self._open_if_waiting(path)
+
+    def _open_if_waiting(self, path: str) -> None:
+        """Termina o "abrir player" que estava esperando a letra desta música."""
+        if path != self._open_after_lyrics:
+            return
+        self._open_after_lyrics = None
+        song = self.model.song(path)
+        if song is None:
+            return
+        if song.lyrics_path is not None:
+            self._start_player(song)
+            return
+        reasons = {
+            LyricsState.NOT_FOUND: "A letra não foi encontrada no LRCLIB.",
+            LyricsState.INSTRUMENTAL: "O LRCLIB indica que esta música é instrumental (sem letra).",
+            LyricsState.FAILED: f"Erro ao buscar a letra: {song.lyrics_error or 'desconhecido'}.",
+        }
+        reason = reasons.get(song.lyrics_state, "A letra não pôde ser baixada.")
+        dialogs.inform(
+            self.view,
+            "Letra não encontrada",
+            f"Não foi possível baixar a letra de \"{song.title}\".\n\n{reason}\n\n"
+            "O player não será aberto.",
+        )
