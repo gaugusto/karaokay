@@ -43,9 +43,17 @@ def has_audio_output() -> bool:
 
 def mix(vocals: np.ndarray, instrumental: np.ndarray, vocal_gain: float, inst_gain: float) -> bytes:
     """Mistura dois trechos float32 e converte para PCM int16."""
+    return mix_with_level(vocals, instrumental, vocal_gain, inst_gain)[0]
+
+
+def mix_with_level(
+    vocals: np.ndarray, instrumental: np.ndarray, vocal_gain: float, inst_gain: float
+) -> tuple[bytes, float]:
+    """Como ``mix``, e devolve também o volume do trecho (RMS, 0–1)."""
     out = vocals * vocal_gain + instrumental * inst_gain
     np.clip(out, -1.0, 1.0, out=out)
-    return (out * 32767).astype("<i2").tobytes()
+    rms = float(np.sqrt(np.mean(np.square(out)))) if out.size else 0.0
+    return (out * 32767).astype("<i2").tobytes(), rms
 
 
 class _MixDevice(QIODevice):
@@ -86,6 +94,7 @@ class StemPlayer(QObject):
         self._frames = 0
         self._cursor = 0       # próximo quadro a ser entregue à placa de som
         self._start_frame = 0  # quadro em que a placa de som começou a tocar
+        self._level = 0.0  # volume do último trecho enviado à placa de som
         self.vocal_volume = 1.0
         self.instrumental_volume = 1.0
         self._state = PlayerState.STOPPED
@@ -180,6 +189,13 @@ class StemPlayer(QObject):
         played = self._start_frame + int(self._sink.processedUSecs() * self._rate / 1_000_000)
         return min(played, self._cursor) / self._rate
 
+    @property
+    def level(self) -> float:
+        """Intensidade do som tocando agora (0–1); zero se não estiver tocando."""
+        if self._state is not PlayerState.PLAYING:
+            return 0.0
+        return min(1.0, self._level * 3.5)  # RMS de música costuma ficar entre 0,05 e 0,3
+
     # ---------------------------------------------------------- controle
     def play(self) -> None:
         if self._sink is None or self._frames == 0:
@@ -242,12 +258,14 @@ class StemPlayer(QObject):
             return b""
         start, end = self._cursor, self._cursor + frames
         self._cursor = end
-        return mix(
+        data, rms = mix_with_level(
             self._vocals[start:end],
             self._instrumental[start:end],
             self.vocal_volume,
             self.instrumental_volume,
         )
+        self._level = rms
+        return data
 
     def _tick(self) -> None:
         self.position_changed.emit(self.position())

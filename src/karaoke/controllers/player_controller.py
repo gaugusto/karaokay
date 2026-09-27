@@ -87,6 +87,7 @@ class PlayerController(QObject):
 
     def _on_position(self, seconds: float) -> None:
         self.view.set_position(seconds)
+        self.view.set_audio_level(getattr(self.player, "level", 0.0))
         if not self.view.in_sync_mode:
             self.view.highlight_line(self.lyrics.line_at(seconds))
 
@@ -125,3 +126,5 @@ class PlayerController(QObject):
 
     def _on_state(self, state: PlayerState) -> None:
         self.view.set_playing(state is PlayerState.PLAYING)
+        if state is not PlayerState.PLAYING:
+            self.view.set_audio_level(0.0)  # pausado: fundo calmo

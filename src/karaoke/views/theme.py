@@ -18,6 +18,7 @@ class Colors:
     TEXT = "#E7E9EE"
     TEXT_SECONDARY = "#9AA3B2"
     TEXT_MUTED = "#5F6776"
+    LYRICS_DIM = "#858E9E"      # versos que não estão sendo cantados
     ACCENT = "#8B5CF6"          # violeta
     ACCENT_HOVER = "#A07BFA"
     ACCENT_PRESSED = "#7444E8"
@@ -182,7 +183,7 @@ QListView {{
     background: transparent;
     border: none;
 }}
-QListWidget#lyrics {{
+QListWidget#lyrics, QListWidget#lyrics > QWidget {{
     background: transparent;
     border: none;
 }}
@@ -208,7 +209,7 @@ QHeaderView::section {{
 
 /* ---- cartões ---- */
 QFrame#card {{
-    background: {Colors.SURFACE};
+    background: rgba(26, 29, 36, 225);
     border: 1px solid {Colors.BORDER};
     border-radius: 16px;
 }}
