@@ -15,6 +15,7 @@ from karaoke.models import (
     processed_songs,
 )
 from karaoke.services import DownloadService, LyricsService, SeparationService, is_youtube_url
+from karaoke.controllers.player_controller import PlayerController
 from karaoke.views import MainWindow
 
 
@@ -45,6 +46,8 @@ class AppController(QObject):
 
         self.view.set_models(self.pending, self.processed)
         self.view.url_submitted.connect(self.download)
+        self.view.play_requested.connect(self.open_player)
+        self.player: PlayerController | None = None
 
         self.downloader.progress.connect(self.view.set_download_progress)
         self.downloader.status.connect(self.view.show_message)
@@ -68,6 +71,25 @@ class AppController(QObject):
     def start(self) -> None:
         self.refresh_library()
         self.view.show()
+
+    # ------------------------------------------------------------------ player
+    def open_player(self, path: str) -> None:
+        """Abre o player (dois cliques numa música processada)."""
+        song = self.model.song(path)
+        if song is None or song.state is not SongState.SEPARATED:
+            return
+        if self.player is not None:
+            self.player.close()  # um player por vez
+        self.player = PlayerController(song, parent=self)
+        self.player.closed.connect(self._on_player_closed)
+        self.player.start()
+
+    def _on_player_closed(self) -> None:
+        sender = self.sender()
+        if sender is self.player:
+            self.player = None
+        if sender is not None:
+            sender.deleteLater()
 
     # -------------------------------------------------------------- biblioteca
     def refresh_library(self, *_args) -> None:

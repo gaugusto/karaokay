@@ -74,6 +74,22 @@ diferentes. Na lista "Processadas" aparece a situação da letra de cada música
 (sincronizada, sem sincronia, sem letra…); as que não têm letra sincronizada
 ficam em cinza. A pasta `letras/` não é rastreada pelo git.
 
+### Player
+
+Dê dois cliques (ou Enter) numa música da lista "Processadas" para abrir o
+player:
+
+- **Letra sincronizada** destacada verso a verso, sempre centralizada; clicar
+  num verso pula para ele. Letras sem sincronia aparecem inteiras, sem destaque.
+- **Play/pause** (botão ou barra de espaço), barra de posição e setas ← → para
+  voltar/avançar 5 s.
+- **Volume da voz e do instrumental separados**, de 0 a 100%.
+
+Os vocais e o instrumental são carregados na memória e misturados pelo próprio
+app antes de ir para a placa de som, então os dois nunca se dessincronizam e a
+mudança de volume vale na hora. A posição usada para destacar a letra é o tempo
+que a placa de som já tocou de fato, o que desconta o buffer e a latência.
+
 Na primeira separação o modelo (algumas centenas de MB) é baixado para `modelos/`,
 também fora do git. Se o app for fechado no meio de uma separação, ela é refeita
 na próxima vez que ele abrir.
@@ -87,15 +103,19 @@ src/karaoke/
     library_model.py   MusicLibraryModel (QAbstractListModel das músicas)
     song_lists.py      listas filtradas: a processar e processadas
     lyrics.py          estado da letra e verificação de sincronia
+    lrc.py             leitura de letras LRC (verso e tempo)
   views/         widgets: só exibem dados e emitem sinais
     main_window.py     janela principal
     song_delegate.py   desenho das músicas nas listas
+    player_window.py   janela do player
   controllers/   ligam visões, modelos e serviços
     app_controller.py  download, fila de processamento e letras
+    player_controller.py  player: áudio, letra e controles
   services/      integrações externas, rodando em segundo plano
     downloader.py      yt-dlp
     separator.py       audio-separator (BS-RoFormer)
     lyrics.py          busca de letras no LRCLIB
+    stem_player.py     mistura e reprodução de vocais + instrumental
   paths.py       pastas do projeto
 tests/           testes (pytest)
 músicas/         áudios baixados (fora do git)

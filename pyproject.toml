@@ -16,6 +16,9 @@ dependencies = [
     # O audio-separator importa o audioread, mas não o declara; o librosa 1.0
     # deixou de instalá-lo. Sem ele a separação falha ao ler o áudio.
     "audioread>=3.1",
+    # Player: leitura dos FLAC separados e mistura das faixas
+    "numpy",
+    "soundfile",
 ]
 
 [project.optional-dependencies]

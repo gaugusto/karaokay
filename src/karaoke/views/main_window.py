@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from karaoke.models import MusicLibraryModel
 from karaoke.views.song_delegate import PendingSongDelegate, ProcessedSongDelegate, song_tooltip
 
 
@@ -70,6 +71,7 @@ class _SongPanel(QWidget):
 
 class MainWindow(QMainWindow):
     url_submitted = Signal(str)
+    play_requested = Signal(str)  # caminho da música processada (dois cliques)
 
     def __init__(self) -> None:
         super().__init__()
@@ -87,6 +89,8 @@ class MainWindow(QMainWindow):
         self.pending_panel.view.setItemDelegate(PendingSongDelegate(self.pending_panel.view))
         self.processed_panel = _SongPanel("Processadas")
         self.processed_panel.view.setItemDelegate(ProcessedSongDelegate(self.processed_panel.view))
+        self.processed_panel.view.doubleClicked.connect(self._on_processed_activated)
+        self.processed_panel.view.activated.connect(self._on_processed_activated)  # Enter
 
         splitter = QSplitter(Qt.Orientation.Vertical)  # a processar em cima, processadas embaixo
         splitter.addWidget(self.pending_panel)
@@ -113,6 +117,11 @@ class MainWindow(QMainWindow):
 
     def select_pending(self, index: QModelIndex) -> None:
         self.pending_panel.select(index)
+
+    def _on_processed_activated(self, index: QModelIndex) -> None:
+        path = index.data(MusicLibraryModel.PathRole)
+        if path:
+            self.play_requested.emit(path)
 
     # ------------------------------------------------------------ download
     def _on_return_pressed(self) -> None:
