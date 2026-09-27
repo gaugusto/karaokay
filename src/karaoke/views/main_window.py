@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListView,
     QMainWindow,
+    QMenu,
     QProgressBar,
     QSplitter,
     QToolTip,
@@ -95,6 +96,7 @@ class MainWindow(QMainWindow):
     url_submitted = Signal(str)
     play_requested = Signal(str)  # caminho da música processada (dois cliques)
     delete_requested = Signal(list)  # caminhos das músicas selecionadas (tecla Delete)
+    manual_lyrics_requested = Signal(str)  # botão direito > Buscar letra manualmente…
 
     def __init__(self) -> None:
         super().__init__()
@@ -114,6 +116,8 @@ class MainWindow(QMainWindow):
         self.processed_panel.view.setItemDelegate(ProcessedSongDelegate(self.processed_panel.view))
         self.processed_panel.view.doubleClicked.connect(self._on_processed_activated)
         self.processed_panel.view.activated.connect(self._on_processed_activated)  # Enter
+        self.processed_panel.view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.processed_panel.view.customContextMenuRequested.connect(self._show_processed_menu)
         self.pending_panel.view.delete_pressed.connect(self.delete_requested)
         self.processed_panel.view.delete_pressed.connect(self.delete_requested)
 
@@ -145,6 +149,19 @@ class MainWindow(QMainWindow):
 
     def select_pending(self, index: QModelIndex) -> None:
         self.pending_panel.select(index)
+
+    def _show_processed_menu(self, pos) -> None:
+        view = self.processed_panel.view
+        index = view.indexAt(pos)
+        if not index.isValid():
+            return
+        path = index.data(MusicLibraryModel.PathRole)
+        menu = QMenu(view)
+        menu.addAction("Abrir no player", lambda: self.play_requested.emit(path))
+        menu.addAction("Buscar letra manualmente…", lambda: self.manual_lyrics_requested.emit(path))
+        menu.addSeparator()
+        menu.addAction("Excluir…", lambda: self.delete_requested.emit([path]))
+        menu.exec(view.viewport().mapToGlobal(pos))
 
     def _on_processed_activated(self, index: QModelIndex) -> None:
         path = index.data(MusicLibraryModel.PathRole)

@@ -50,8 +50,9 @@ class FakeLyrics(QObject):
         super().__init__()
         self.jobs = []
 
-    def enqueue(self, audio, metadata_path, lyrics_base):
+    def enqueue(self, audio, metadata_path, lyrics_base, priority=False):
         self.jobs.append((str(audio), metadata_path, lyrics_base))
+        self.priorities = getattr(self, "priorities", []) + [priority]
 
 
 def make(dirs):

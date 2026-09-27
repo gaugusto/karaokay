@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 import json
 import queue
 import re
@@ -14,6 +15,7 @@ import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
+import shiboken6
 from PySide6.QtCore import QObject, Signal
 
 from karaoke import __version__
@@ -143,6 +145,52 @@ def _to_result(record: dict) -> LyricsResult:
     return LyricsResult(LyricsState.INSTRUMENTAL if record.get("instrumental") else LyricsState.NOT_FOUND)
 
 
+def result_from_record(record: dict) -> LyricsResult:
+    """Converte um resultado do LRCLIB em letra pronta para salvar."""
+    return _to_result(record)
+
+
+def record_kind(record: dict) -> LyricsState:
+    """SYNCED, PLAIN, INSTRUMENTAL ou NOT_FOUND (sem letra) para um resultado."""
+    if is_synced_lrc(record.get("syncedLyrics")):
+        return LyricsState.SYNCED
+    if record.get("plainLyrics") or record.get("syncedLyrics"):
+        return LyricsState.PLAIN
+    return LyricsState.INSTRUMENTAL if record.get("instrumental") else LyricsState.NOT_FOUND
+
+
+def manual_search(client: LrclibClient, artist: str, track: str) -> list[dict]:
+    """Busca livre digitada pelo usuário: combina a busca por campos e por
+    texto, sem repetir resultados."""
+    artist, track = artist.strip(), track.strip()
+    queries = []
+    if track:
+        queries.append({"track_name": track, **({"artist_name": artist} if artist else {})})
+    text = " ".join(filter(None, [artist, track]))
+    if text:
+        queries.append({"q": text})
+    seen, results = set(), []
+    for params in queries:
+        for record in client.search(**params):
+            key = record.get("id") or (record.get("artistName"), record.get("trackName"), record.get("duration"))
+            if key not in seen:
+                seen.add(key)
+                results.append(record)
+    return results
+
+
+def sort_candidates(records: list[dict], duration: float | None) -> list[dict]:
+    """Sincronizadas primeiro, depois as sem sincronia; em cada grupo, a
+    duração mais próxima do áudio primeiro."""
+    order = {LyricsState.SYNCED: 0, LyricsState.PLAIN: 1, LyricsState.INSTRUMENTAL: 2, LyricsState.NOT_FOUND: 3}
+
+    def key(record):
+        diff = abs(record["duration"] - duration) if duration and record.get("duration") else 0.0
+        return (order[record_kind(record)], diff)
+
+    return sorted(records, key=key)
+
+
 def choose_best(records: list[dict], duration: float | None) -> dict | None:
     """Prefere letra sincronizada e duração mais próxima; descarta durações
     muito diferentes (provavelmente outra versão da música)."""
@@ -236,8 +284,48 @@ def save_lyrics(result: LyricsResult, base: Path) -> Path | None:
 
 
 # ---------------------------------------------------------------- serviço
+class ManualLyricsSearch(QObject):
+    """Busca manual em segundo plano; cada busca tem um número, e só a mais
+    recente é entregue (resultados atrasados são ignorados)."""
+
+    finished = Signal(int, object)  # número da busca, lista de resultados
+    failed = Signal(int, str)
+
+    def __init__(self, client: LrclibClient | None = None, parent=None) -> None:
+        super().__init__(parent)
+        self._client = client or LrclibClient()
+        self._request = 0
+
+    def search(self, artist: str, track: str) -> int:
+        self._request += 1
+        request = self._request
+
+        def work() -> None:
+            try:
+                signal, args = self.finished, (request, manual_search(self._client, artist, track))
+            except Exception as exc:
+                signal, args = self.failed, (request, str(exc) or exc.__class__.__name__)
+            if not shiboken6.isValid(self):
+                return  # janela fechada durante a busca
+            try:
+                signal.emit(*args)
+            except RuntimeError:
+                pass
+
+        threading.Thread(target=work, name="busca-manual", daemon=True).start()
+        return request
+
+    @property
+    def latest(self) -> int:
+        return self._request
+
+
 class LyricsService(QObject):
-    """Busca as letras numa thread de fundo, uma música por vez, em ordem."""
+    """Busca as letras numa thread de fundo, uma música por vez, em ordem.
+
+    Pedidos com ``priority=True`` (alguém esperando para abrir o player)
+    passam na frente dos demais.
+    """
 
     started = Signal(str)                   # caminho da música
     finished = Signal(str, object, str)     # caminho, LyricsState, origem ("Artista - Música")
@@ -246,15 +334,24 @@ class LyricsService(QObject):
     def __init__(self, client: LrclibClient | None = None, parent=None) -> None:
         super().__init__(parent)
         self._client = client or LrclibClient()
-        self._queue: queue.Queue[tuple[Path, Path | None, Path]] = queue.Queue()
+        self._queue: queue.PriorityQueue = queue.PriorityQueue()
+        self._order = itertools.count()  # desempate: ordem de chegada
         threading.Thread(target=self._loop, name="letras", daemon=True).start()
 
-    def enqueue(self, audio: str | Path, metadata_path: Path | None, lyrics_base: Path) -> None:
-        self._queue.put((Path(audio), metadata_path, lyrics_base))
+    def enqueue(
+        self,
+        audio: str | Path,
+        metadata_path: Path | None,
+        lyrics_base: Path,
+        priority: bool = False,
+    ) -> None:
+        job = (Path(audio), metadata_path, lyrics_base)
+        self._queue.put((0 if priority else 1, next(self._order), job))
 
     def _loop(self) -> None:
         while True:
-            self._fetch(*self._queue.get())
+            _priority, _order, job = self._queue.get()
+            self._fetch(*job)
 
     def _fetch(self, audio: Path, metadata_path: Path | None, lyrics_base: Path) -> None:
         if not audio.exists():

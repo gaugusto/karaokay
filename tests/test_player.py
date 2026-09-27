@@ -214,6 +214,8 @@ def test_double_click_opens_player_only_for_processed(qapp, dirs, monkeypatch):
     feita = add_song(music, "feita.m4a")
     nova = add_song(music, "nova.m4a")
     add_stems(separated, "feita")
+    (music.parent / "letras").mkdir()
+    (music.parent / "letras" / "feita.lrc").write_text(LRC)
     view, ctrl = make(dirs)
     ctrl.refresh_library()
 
@@ -393,6 +395,8 @@ def test_main_window_closes_player_and_asks_if_playing(qapp, dirs, answers, monk
     music, separated = dirs
     add_song(music, "a.m4a")
     add_stems(separated, "a")
+    (music.parent / "letras").mkdir()
+    (music.parent / "letras" / "a.lrc").write_text(LRC)
     view, app_ctrl = make(dirs)
     app_ctrl.refresh_library()
     view.show()
