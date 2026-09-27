@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QEasingCurve, QPropertyAnimation, QSettings, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QEasingCurve, QEvent, QPropertyAnimation, QSettings, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -235,6 +235,16 @@ class PlayerWindow(QWidget):
         self.effect_button.setFixedSize(46, 40)
         self.effect_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.effect_button.toggled.connect(self.set_background_effect)
+
+        # ⛶ : tela cheia (F11; Esc sai)
+        self._was_maximized = False
+        self.fullscreen_button = QPushButton("⛶")
+        self.fullscreen_button.setObjectName("fontButton")
+        self.fullscreen_button.setCheckable(True)
+        self.fullscreen_button.setFixedSize(46, 40)
+        self.fullscreen_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.fullscreen_button.setToolTip("Tela cheia (F11)")
+        self.fullscreen_button.clicked.connect(self.toggle_fullscreen)
         self.effect_button.setChecked(self._saved_background_effect())
         self.set_background_effect(self.effect_button.isChecked())
         self.font_smaller_button.clicked.connect(lambda: self.change_font_size(-LYRICS_FONT_STEP))
@@ -304,8 +314,9 @@ class PlayerWindow(QWidget):
         layout.setSpacing(12)
         header = QHBoxLayout()
         header.setSpacing(8)
-        header.addSpacing(46 * 3 + 16)  # equilibra os botões para o título ficar centralizado
+        header.addSpacing(46 * 4 + 24)  # equilibra os botões para o título ficar centralizado
         header.addWidget(self.title_label, 1)
+        header.addWidget(self.fullscreen_button)
         header.addWidget(self.effect_button)
         header.addWidget(self.font_smaller_button)
         header.addWidget(self.font_larger_button)
@@ -318,7 +329,8 @@ class PlayerWindow(QWidget):
         QShortcut(QKeySequence(Qt.Key.Key_Space), self, self.toggle_requested.emit)
         QShortcut(QKeySequence(Qt.Key.Key_Left), self, lambda: self.seek_relative_requested.emit(-5))
         QShortcut(QKeySequence(Qt.Key.Key_Right), self, lambda: self.seek_relative_requested.emit(5))
-        QShortcut(QKeySequence(Qt.Key.Key_Escape), self, lambda: self.sync_button.setChecked(False))
+        QShortcut(QKeySequence(Qt.Key.Key_Escape), self, self._on_escape)
+        QShortcut(QKeySequence(Qt.Key.Key_F11), self, self.toggle_fullscreen)
         for keys, step in (("Ctrl++", LYRICS_FONT_STEP), ("Ctrl+=", LYRICS_FONT_STEP), ("Ctrl+-", -LYRICS_FONT_STEP)):
             QShortcut(QKeySequence(keys), self, lambda step=step: self.change_font_size(step))
         QShortcut(QKeySequence("Ctrl+0"), self, lambda: self.set_font_size(DEFAULT_LYRICS_FONT_SIZE))
@@ -442,6 +454,45 @@ class PlayerWindow(QWidget):
         if item is not None:
             self._style_line(item, current=True)
         self.lyrics_view.center_on(max(index, 0))
+
+    # ------------------------------------------------------------ tela cheia
+    @property
+    def is_fullscreen(self) -> bool:
+        return bool(self.windowState() & Qt.WindowState.WindowFullScreen)
+
+    def toggle_fullscreen(self) -> None:
+        self.set_fullscreen(not self.is_fullscreen)
+
+    def set_fullscreen(self, fullscreen: bool) -> None:
+        """Entra/sai da tela cheia; ao sair, volta a maximizada se estava assim."""
+        if fullscreen == self.is_fullscreen:
+            self._update_fullscreen_button()
+            return
+        if fullscreen:
+            self._was_maximized = self.isMaximized()
+            self.showFullScreen()
+        elif self._was_maximized:
+            self.showMaximized()
+        else:
+            self.showNormal()
+        self._update_fullscreen_button()
+
+    def _update_fullscreen_button(self) -> None:
+        full = self.is_fullscreen
+        self.fullscreen_button.setChecked(full)
+        self.fullscreen_button.setToolTip("Sair da tela cheia (F11 ou Esc)" if full else "Tela cheia (F11)")
+
+    def changeEvent(self, event) -> None:
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.WindowStateChange:
+            self._update_fullscreen_button()  # também quando o sistema muda o estado
+
+    def _on_escape(self) -> None:
+        """Esc: primeiro cancela a sincronização; senão, sai da tela cheia."""
+        if self._sync_mode:
+            self.sync_button.setChecked(False)
+        elif self.is_fullscreen:
+            self.set_fullscreen(False)
 
     # ------------------------------------------------------- efeito de fundo
     def set_background_effect(self, enabled: bool) -> None:
