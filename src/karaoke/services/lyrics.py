@@ -1,10 +1,12 @@
-"""Busca de letras no LRCLIB (https://lrclib.net)."""
+"""Busca de letras no LRCLIB (https://lrclib.net).
+
+A busca só acontece pela janela de busca manual: o usuário escolhe o
+resultado e só então a letra é salva.
+"""
 
 from __future__ import annotations
 
-import itertools
 import json
-import queue
 import re
 import shutil
 import subprocess
@@ -23,10 +25,6 @@ from karaoke.models.lyrics import PLAIN_EXT, SYNCED_EXT, LyricsState, is_synced_
 
 API_URL = "https://lrclib.net/api"
 USER_AGENT = f"karaokay/{__version__} (https://github.com/gaugusto/karaokay)"
-
-# Diferença máxima de duração entre o áudio e a faixa do LRCLIB. O /api/get
-# já usa ±2 s; na busca livre aceitamos um pouco mais (clipes têm introduções).
-SEARCH_DURATION_TOLERANCE = 10.0
 
 
 # ---------------------------------------------------------------- título
@@ -130,10 +128,6 @@ class LrclibClient:
         return self._request("search", params) or []
 
 
-def _has_lyrics(record: dict | None) -> bool:
-    return bool(record) and bool(record.get("syncedLyrics") or record.get("plainLyrics"))
-
-
 def _to_result(record: dict) -> LyricsResult:
     source = f"{record.get('artistName')} - {record.get('trackName')}"
     synced = record.get("syncedLyrics")
@@ -189,49 +183,6 @@ def sort_candidates(records: list[dict], duration: float | None) -> list[dict]:
         return (order[record_kind(record)], diff)
 
     return sorted(records, key=key)
-
-
-def choose_best(records: list[dict], duration: float | None) -> dict | None:
-    """Prefere letra sincronizada e duração mais próxima; descarta durações
-    muito diferentes (provavelmente outra versão da música)."""
-    candidates = []
-    for record in records:
-        if not _has_lyrics(record) and not record.get("instrumental"):
-            continue
-        diff = 0.0
-        if duration and record.get("duration"):
-            diff = abs(record["duration"] - duration)
-            if diff > SEARCH_DURATION_TOLERANCE:
-                continue
-        synced = is_synced_lrc(record.get("syncedLyrics"))
-        candidates.append((not synced, not _has_lyrics(record), diff, record))
-    if not candidates:
-        return None
-    return min(candidates, key=lambda c: c[:3])[3]
-
-
-def find_lyrics(client: LrclibClient, info: TrackInfo) -> LyricsResult:
-    """Tenta /api/get com cada palpite e depois /api/search."""
-    fallback: dict | None = None
-    guesses = info.guesses()
-
-    for track, artist in guesses:
-        record = client.get(track, artist, info.duration)
-        if record and is_synced_lrc(record.get("syncedLyrics")):
-            return _to_result(record)
-        if record and fallback is None and (_has_lyrics(record) or record.get("instrumental")):
-            fallback = record
-
-    searches = [{"track_name": t, "artist_name": a} for t, a in guesses]
-    searches.append({"q": " ".join(filter(None, [clean_title(info.title), info.artist]))})
-    for params in searches:
-        best = choose_best(client.search(**params), info.duration)
-        if best and is_synced_lrc(best.get("syncedLyrics")):
-            return _to_result(best)
-        if best and fallback is None:
-            fallback = best
-
-    return _to_result(fallback) if fallback else LyricsResult(LyricsState.NOT_FOUND)
 
 
 # ---------------------------------------------------------------- auxiliares
@@ -318,51 +269,3 @@ class ManualLyricsSearch(QObject):
     @property
     def latest(self) -> int:
         return self._request
-
-
-class LyricsService(QObject):
-    """Busca as letras numa thread de fundo, uma música por vez, em ordem.
-
-    Pedidos com ``priority=True`` (alguém esperando para abrir o player)
-    passam na frente dos demais.
-    """
-
-    started = Signal(str)                   # caminho da música
-    finished = Signal(str, object, str)     # caminho, LyricsState, origem ("Artista - Música")
-    failed = Signal(str, str)               # caminho, mensagem de erro
-
-    def __init__(self, client: LrclibClient | None = None, parent=None) -> None:
-        super().__init__(parent)
-        self._client = client or LrclibClient()
-        self._queue: queue.PriorityQueue = queue.PriorityQueue()
-        self._order = itertools.count()  # desempate: ordem de chegada
-        threading.Thread(target=self._loop, name="letras", daemon=True).start()
-
-    def enqueue(
-        self,
-        audio: str | Path,
-        metadata_path: Path | None,
-        lyrics_base: Path,
-        priority: bool = False,
-    ) -> None:
-        job = (Path(audio), metadata_path, lyrics_base)
-        self._queue.put((0 if priority else 1, next(self._order), job))
-
-    def _loop(self) -> None:
-        while True:
-            _priority, _order, job = self._queue.get()
-            self._fetch(*job)
-
-    def _fetch(self, audio: Path, metadata_path: Path | None, lyrics_base: Path) -> None:
-        if not audio.exists():
-            return  # música apagada antes da busca
-        self.started.emit(str(audio))
-        try:
-            result = find_lyrics(self._client, load_track_info(audio, metadata_path))
-            if not audio.exists():
-                return  # apagada durante a busca: não deixa letra órfã
-            save_lyrics(result, lyrics_base)
-        except Exception as exc:
-            self.failed.emit(str(audio), str(exc) or exc.__class__.__name__)
-            return
-        self.finished.emit(str(audio), result.state, result.source or "")

@@ -16,7 +16,6 @@ from karaoke.models import (
 )
 from karaoke.services import (
     DownloadService,
-    LyricsService,
     SeparationService,
     delete_paths,
     is_youtube_url,
@@ -33,7 +32,6 @@ class AppController(QObject):
         model: MusicLibraryModel | None = None,
         downloader: DownloadService | None = None,
         separator: SeparationService | None = None,
-        lyrics: LyricsService | None = None,
         parent=None,
     ) -> None:
         super().__init__(parent)
@@ -45,7 +43,6 @@ class AppController(QObject):
         self.separator = separator or SeparationService(
             paths.MODELS_DIR, paths.SEPARATED_DIR / ".em-andamento", self
         )
-        self.lyrics = lyrics or LyricsService(parent=self)
 
         self.pending = pending_songs(self.model, self)
         self.processed = processed_songs(self.model, self)
@@ -57,7 +54,6 @@ class AppController(QObject):
         self.view.delete_requested.connect(self.delete_songs)
         self.view.manual_lyrics_requested.connect(self.open_manual_search)
         self.player: PlayerController | None = None
-        self._open_after_lyrics: str | None = None  # música esperando a letra para abrir
         self.lyrics_search: LyricsSearchController | None = None
         self.view.close_guard = self._can_close
 
@@ -72,10 +68,6 @@ class AppController(QObject):
         self.separator.finished.connect(self._on_separation_finished)
         self.separator.failed.connect(self._on_separation_failed)
 
-        self.lyrics.started.connect(self._on_lyrics_started)
-        self.lyrics.finished.connect(self._on_lyrics_finished)
-        self.lyrics.failed.connect(self._on_lyrics_failed)
-
         self.model.music_dir.mkdir(parents=True, exist_ok=True)
         self._watcher = QFileSystemWatcher([str(self.model.music_dir)], self)
         self._watcher.directoryChanged.connect(self.refresh_library)
@@ -88,18 +80,15 @@ class AppController(QObject):
     def open_player(self, path: str) -> None:
         """Abre o player (dois cliques numa música processada).
 
-        Sem letra baixada, tenta buscá-la antes (com prioridade); o player só
-        abre se a letra for encontrada.
+        Sem letra baixada, abre antes a busca de letra; o player só abre
+        depois que o usuário escolher uma. Nada é baixado automaticamente.
         """
         song = self.model.song(path)
         if song is None or song.state is not SongState.SEPARATED:
             return
         if song.lyrics_path is None:
-            self._open_after_lyrics = str(song.path)
-            self.view.show_message(f"Buscando a letra de {song.title} antes de abrir o player…")
-            self._queue_lyrics(song.path, priority=True, retry=True)
+            self.open_manual_search(path, open_player_after=True)
             return
-        self._open_after_lyrics = None
         self._start_player(song)
 
     def _start_player(self, song) -> None:
@@ -136,8 +125,6 @@ class AppController(QObject):
 
         if self.player is not None and self.player.song.path in {s.path for s in songs}:
             self.player.close()
-        if self._open_after_lyrics in {str(s.path) for s in songs}:
-            self._open_after_lyrics = None
         if self.lyrics_search is not None and self.lyrics_search.song.path in {s.path for s in songs}:
             self.lyrics_search.view.reject()
         errors = []
@@ -182,9 +169,6 @@ class AppController(QObject):
         waiting = self.model.songs_in_state(SongState.NOT_SEPARATED)
         for song in sorted(waiting, key=lambda s: (s.added_at, s.title.casefold())):
             self._queue_separation(song.path)
-        # Processadas que ainda não têm letra
-        for song in self.model.songs_in_state(SongState.SEPARATED):
-            self._queue_lyrics(song.path)
 
     # ---------------------------------------------------------------- download
     def download(self, url: str) -> None:
@@ -228,7 +212,6 @@ class AppController(QObject):
         self.model.set_queue_position(path, None)
         self.model.set_state(path, SongState.SEPARATED)  # vai para "Processadas"
         self.view.show_message(f"Processada: {Path(path).stem}", 5000)
-        self._queue_lyrics(Path(path))
 
     def _on_separation_failed(self, path: str, message: str) -> None:
         self.model.set_progress(path, None)
@@ -236,70 +219,9 @@ class AppController(QObject):
         self.model.set_state(path, SongState.FAILED, message)
         self.view.show_message(f"Falha ao processar {Path(path).stem}: {message}", 15000)
 
-    # ------------------------------------------------------------------ letras
-    # Depois de processada, a música ganha a letra do LRCLIB (em outra fila,
-    # para a busca na internet não atrasar a separação da próxima música).
-    def _queue_lyrics(self, path: Path, priority: bool = False, retry: bool = False) -> None:
-        """Busca a letra. Normalmente só uma vez por sessão; ``retry`` busca de
-        novo mesmo que antes não tenha sido encontrada."""
-        song = self.model.song(path)
-        if song is None:
-            return
-        if song.lyrics_state is LyricsState.SEARCHING and not priority:
-            return
-        if song.lyrics_state is not LyricsState.UNKNOWN and not retry:
-            return
-        self.model.set_lyrics_state(path, LyricsState.SEARCHING)
-        self.lyrics.enqueue(path, song.metadata_path, song.lyrics_base, priority=priority)
-
-    def _on_lyrics_started(self, path: str) -> None:
-        self.model.set_lyrics_state(path, LyricsState.SEARCHING)
-
-    def _on_lyrics_finished(self, path: str, state: LyricsState, source: str) -> None:
-        self.model.set_lyrics_state(path, state)
-        messages = {
-            LyricsState.SYNCED: "letra sincronizada encontrada",
-            LyricsState.PLAIN: "letra encontrada, mas sem sincronia",
-            LyricsState.INSTRUMENTAL: "música instrumental, sem letra",
-            LyricsState.NOT_FOUND: "letra não encontrada no LRCLIB",
-        }
-        detail = f" ({source})" if source else ""
-        self.view.show_message(f"{Path(path).stem}: {messages.get(state, '')}{detail}", 8000)
-        self._open_if_waiting(path)
-
-    def _on_lyrics_failed(self, path: str, message: str) -> None:
-        self.model.set_lyrics_state(path, LyricsState.FAILED, message)
-        self.view.show_message(f"Erro ao buscar a letra de {Path(path).stem}: {message}", 10000)
-        self._open_if_waiting(path)
-
-    def _open_if_waiting(self, path: str) -> None:
-        """Termina o "abrir player" que estava esperando a letra desta música."""
-        if path != self._open_after_lyrics:
-            return
-        self._open_after_lyrics = None
-        song = self.model.song(path)
-        if song is None:
-            return
-        if song.lyrics_path is not None:
-            self._start_player(song)
-            return
-        reasons = {
-            LyricsState.NOT_FOUND: "A letra não foi encontrada no LRCLIB.",
-            LyricsState.INSTRUMENTAL: "O LRCLIB indica que esta música é instrumental (sem letra).",
-            LyricsState.FAILED: f"Erro ao buscar a letra: {song.lyrics_error or 'desconhecido'}.",
-        }
-        reason = reasons.get(song.lyrics_state, "A letra não pôde ser baixada.")
-        if dialogs.offer(
-            self.view,
-            "Letra não encontrada",
-            f"Não foi possível baixar a letra de \"{song.title}\".\n\n{reason}\n\n"
-            "O player não será aberto. Você pode procurar a letra digitando o artista "
-            "e o nome da música.",
-            "Buscar manualmente…",
-        ):
-            self.open_manual_search(path, open_player_after=True)
-
-    # ------------------------------------------------------- busca manual
+    # ------------------------------------------------------------ letras
+    # Letras nunca são baixadas sozinhas: só pela janela de busca, quando o
+    # usuário escolhe uma (ao abrir o player sem letra, ou pelo botão direito).
     def open_manual_search(self, path: str, open_player_after: bool = False) -> None:
         """Janela para procurar a letra digitando artista e música. Com
         ``open_player_after``, o player abre assim que uma letra for escolhida."""
@@ -308,7 +230,9 @@ class AppController(QObject):
             return
         if self.lyrics_search is not None:
             self.lyrics_search.view.reject()  # uma busca por vez
-        search = LyricsSearchController(song, parent_widget=self.view, parent=self)
+        search = LyricsSearchController(
+            song, parent_widget=self.view, parent=self, opening_player=open_player_after
+        )
         search.saved.connect(lambda state: self._on_manual_lyrics_saved(search, state, open_player_after))
         search.cancelled.connect(lambda: self._close_manual_search(search))
         self.lyrics_search = search

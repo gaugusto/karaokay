@@ -167,8 +167,9 @@ def test_context_menu_search_then_player_opens(qapp, dirs, monkeypatch):
 
     real = app_module.LyricsSearchController
 
-    def make_search(song, parent_widget=None, parent=None):
-        ctrl = real(song, LyricsSearchDialog(song.title), FakeSearcher(), parent=parent)
+    def make_search(song, parent_widget=None, parent=None, opening_player=False):
+        ctrl = real(song, LyricsSearchDialog(song.title), FakeSearcher(), parent=parent,
+                    opening_player=opening_player)
         created.append(ctrl)
         return ctrl
 
@@ -189,8 +190,11 @@ def test_context_menu_search_then_player_opens(qapp, dirs, monkeypatch):
     assert opened == []  # pela lista, só salva a letra
     assert "Letra sincronizada salva" in view.statusBar().currentMessage()
 
-    app.open_manual_search(path, open_player_after=True)  # vindo do aviso
+    (music.parent / "letras" / "Artista - Música.lrc").unlink()  # sem letra de novo
+    app.refresh_library()
+    app.open_player(path)  # tocar música sem letra abre a busca
     search = created[-1]
+    assert search.view.use_button.text() == "Usar e abrir o player"
     search.searcher.finished.emit(1, [rec(8, "Música", "Artista", synced=None)])
     search.view.use_button.click()
     assert opened == ["Artista - Música"]
@@ -209,3 +213,31 @@ def test_background_search_delivers_on_main_thread(qapp):
     QTimer.singleShot(3000, loop.quit)
     loop.exec()
     assert got == [(request, [2, 1])] and searcher.latest == request
+
+
+def test_dialog_is_resizable_and_remembers_size(qapp):
+    from PySide6.QtCore import QSize, Qt
+
+    LyricsSearchDialog._last_size = None
+    dialog = LyricsSearchDialog("Música")
+    flags = dialog.windowFlags()
+    assert flags & Qt.WindowType.Window and flags & Qt.WindowType.WindowMaximizeButtonHint
+    assert dialog.isSizeGripEnabled()
+    assert dialog.minimumSize() == QSize(560, 420)
+    dialog.show()
+    dialog.resize(1000, 800)
+    dialog.reject()
+    again = LyricsSearchDialog("Outra")
+    assert again.size() == QSize(1000, 800)
+    LyricsSearchDialog._last_size = None
+
+
+def test_dialog_explains_when_opening_player(song):
+    view = LyricsSearchDialog(song.title)
+    LyricsSearchController(song, view, FakeSearcher(), opening_player=True)
+    assert "ainda não tem letra" in view.context_note.text()
+    assert not view.context_note.isHidden()
+    assert view.use_button.text() == "Usar e abrir o player"
+    other = LyricsSearchDialog(song.title)
+    LyricsSearchController(song, other, FakeSearcher())
+    assert other.context_note.isHidden() and other.use_button.text() == "Usar esta letra"
