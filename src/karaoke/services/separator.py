@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import queue
 import shutil
+import subprocess
 import threading
 from pathlib import Path
 
@@ -15,6 +16,31 @@ from karaoke.models.song import INSTRUMENTAL_NAME, VOCALS_NAME, find_stem
 # BS-RoFormer treinado por ZFTurbo/viperx (SDR ~12,9 dB nos vocais)
 MODEL_FILENAME = "model_bs_roformer_ep_317_sdr_12.9755.ckpt"
 OUTPUT_FORMAT = "FLAC"  # sem perdas e menor que WAV
+SAMPLE_RATE = 44100      # taxa com que o modelo trabalha
+
+
+def decode_to_wav(source: Path, target: Path) -> None:
+    """Decodifica qualquer áudio para WAV estéreo com o ffmpeg.
+
+    O librosa 1.0 (usado pelo audio-separator) só lê os formatos do
+    libsndfile; .webm, .m4a e .opus do YouTube precisam ser convertidos.
+    Usa float de 32 bits para não perder nada na conversão.
+    """
+    if shutil.which("ffmpeg") is None:
+        raise RuntimeError("ffmpeg não encontrado; instale com: sudo pacman -S ffmpeg")
+    result = subprocess.run(
+        [
+            "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
+            "-i", str(source),
+            "-vn", "-ac", "2", "-ar", str(SAMPLE_RATE), "-c:a", "pcm_f32le",
+            str(target),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        detail = result.stderr.strip().splitlines()[-1:] or ["erro desconhecido"]
+        raise RuntimeError(f"ffmpeg não conseguiu ler o áudio: {detail[0]}")
 
 
 class SeparationService(QObject):
@@ -71,10 +97,13 @@ class SeparationService(QObject):
             self.status.emit(f"Separando vocais: {Path(song_path).stem}")
             shutil.rmtree(self._work_dir, ignore_errors=True)
             self._work_dir.mkdir(parents=True)
+            decoded = self._work_dir / "_entrada.wav"
+            decode_to_wav(Path(song_path), decoded)
             self._separator.separate(
-                song_path,
+                str(decoded),
                 custom_output_names={"Vocals": VOCALS_NAME, "Instrumental": INSTRUMENTAL_NAME},
             )
+            decoded.unlink()
             if find_stem(self._work_dir, VOCALS_NAME) is None or find_stem(self._work_dir, INSTRUMENTAL_NAME) is None:
                 produced = ", ".join(p.name for p in self._work_dir.iterdir()) or "nada"
                 raise RuntimeError(f"o modelo não gerou vocais e instrumental (gerou: {produced})")

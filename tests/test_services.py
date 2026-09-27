@@ -3,6 +3,7 @@ import types
 
 import pytest
 
+import karaoke.services.separator as separator_module
 from karaoke.services import SeparationService, is_youtube_url
 
 
@@ -48,6 +49,7 @@ def service(qapp, tmp_path, monkeypatch):
     mod.Separator = FakeSeparator
     monkeypatch.setitem(sys.modules, "audio_separator", pkg)
     monkeypatch.setitem(sys.modules, "audio_separator.separator", mod)
+    monkeypatch.setattr(separator_module, "decode_to_wav", lambda src, dst: dst.write_bytes(b"wav"))
     return SeparationService(tmp_path / "modelos", tmp_path / "trabalho")
 
 

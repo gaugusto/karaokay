@@ -7,7 +7,8 @@ name = "karaoke"
 version = "0.1.0"
 description = "Aplicativo de karaokê em Python/PySide6"
 readme = "README.md"
-requires-python = ">=3.10"
+# <3.14: o audio-separator trava o beartype em 0.18, que não suporta o Python 3.14
+requires-python = ">=3.10,<3.14"
 dependencies = [
     "PySide6>=6.6",
     "yt-dlp",

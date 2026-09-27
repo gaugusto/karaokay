@@ -4,7 +4,7 @@ Aplicativo de karaokê para desktop, escrito em Python com interface em PySide6 
 
 ## Requisitos
 
-- Python 3.10+
+- Python 3.10 a 3.13 (o 3.14 ainda não é suportado pelo audio-separator)
 - PySide6
 - yt-dlp (download do áudio do YouTube)
 - audio-separator com o modelo BS-RoFormer (separação de vocais)
@@ -13,11 +13,13 @@ Aplicativo de karaokê para desktop, escrito em Python com interface em PySide6 
 
 ## Como rodar
 
+Com o [uv](https://docs.astral.sh/uv/) (`sudo pacman -S uv`), que baixa o Python
+3.13 sozinho se o sistema tiver outra versão:
+
 ```bash
-python -m venv .venv
-source .venv/bin/activate      # Windows: .venv\Scripts\activate
-pip install -e ".[gpu]"     # sem NVIDIA: ".[cpu]"
-python -m karaoke
+uv venv                        # usa o Python do arquivo .python-version (3.13)
+uv pip install -e ".[gpu]"     # sem NVIDIA: ".[cpu]"
+.venv/bin/python -m karaoke
 ```
 
 Use sempre a instalação editável (`-e`): assim as pastas `músicas/` e `modelos/`
@@ -39,7 +41,8 @@ Assim que um download termina, a música entra numa fila e é separada em vocais
 instrumental com o BS-RoFormer (`model_bs_roformer_ep_317_sdr_12.9755.ckpt`), via
 [audio-separator](https://github.com/nomadkaraoke/python-audio-separator). O
 resultado fica em `músicas/separadas/<nome da música>/vocais.flac` e
-`instrumental.flac`. Na lista, músicas ainda não separadas aparecem em cinza.
+`instrumental.flac`. Antes de separar, o áudio é decodificado com o ffmpeg,
+então qualquer formato funciona. Na lista, músicas ainda não separadas aparecem em cinza.
 
 Na primeira separação o modelo (algumas centenas de MB) é baixado para `modelos/`,
 também fora do git. Se o app for fechado no meio de uma separação, ela é refeita
@@ -70,6 +73,6 @@ modelos/         modelos de separação (fora do git)
 ## Testes
 
 ```bash
-pip install -e ".[dev]"
-pytest
+uv pip install -e ".[dev]"
+.venv/bin/pytest
 ```
