@@ -153,6 +153,12 @@ QPushButton:default:disabled, QPushButton#primary:disabled {{
     border-color: {Colors.ACCENT_DIM};
     color: {Colors.TEXT_SECONDARY};
 }}
+QPushButton#fontButton {{
+    padding: 0;
+    font-size: 12pt;
+    font-weight: 700;
+    border-radius: 10px;
+}}
 QPushButton#playButton {{
     background: {Colors.ACCENT};
     border: none;

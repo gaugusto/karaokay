@@ -521,3 +521,69 @@ def test_sync_can_be_cancelled_and_needs_synced_lyrics(song, tmp_path):
 
     view.set_lyrics(load_lyrics(None))  # sem letra: botão desativado
     assert not view.sync_button.isEnabled()
+
+
+# ---------------------------------------------------------- tamanho da letra
+@pytest.fixture
+def fresh_font_setting():
+    from karaoke.views.player_window import _settings
+
+    _settings().remove("player/lyrics_font_size")
+    yield
+    _settings().remove("player/lyrics_font_size")
+
+
+def test_font_buttons_change_size_and_keep_line_centered(qapp, fresh_font_setting):
+    from karaoke.views.player_window import (
+        DEFAULT_LYRICS_FONT_SIZE,
+        MAX_LYRICS_FONT_SIZE,
+        MIN_LYRICS_FONT_SIZE,
+        SCROLL_ANIMATION_MS,
+    )
+
+    view = PlayerWindow()
+    view.resize(800, 640)
+    view.show()
+    lrc = "\n".join(f"[00:{i * 2:02d}.00]Verso {i}" for i in range(20))
+    view.set_lyrics(parse_lrc(lrc))
+    view.highlight_line(10)
+    _spin(SCROLL_ANIMATION_MS + 100)
+    lv = view.lyrics_view
+    assert view.font_size == DEFAULT_LYRICS_FONT_SIZE == 20
+    assert lv.line_item(3).font().pointSize() == 20
+    assert lv.line_item(10).font().pointSize() == 26  # verso atual 30% maior
+
+    view.font_larger_button.click()
+    view.font_larger_button.click()
+    assert view.font_size == 24
+    assert lv.line_item(3).font().pointSize() == 24
+    assert lv.line_item(10).font().pointSize() == 31 and lv.line_item(10).font().bold()
+    middle = lv.viewport().height() / 2
+    assert abs(lv.visualItemRect(lv.line_item(10)).center().y() - middle) < 30
+
+    view.font_smaller_button.click()
+    assert view.font_size == 22
+
+    view.set_font_size(1000)  # limites
+    assert view.font_size == MAX_LYRICS_FONT_SIZE and not view.font_larger_button.isEnabled()
+    view.set_font_size(0)
+    assert view.font_size == MIN_LYRICS_FONT_SIZE and not view.font_smaller_button.isEnabled()
+    assert view.font_larger_button.isEnabled()
+
+
+def test_font_size_is_remembered(qapp, fresh_font_setting):
+    first = PlayerWindow()
+    first.set_font_size(30)
+    second = PlayerWindow()  # próxima vez que o player abrir
+    assert second.font_size == 30
+    second.set_lyrics(parse_lrc("[00:01.00]a\n[00:02.00]b\n[00:03.00]c\n"))
+    assert second.lyrics_view.line_item(0).font().pointSize() == 30
+
+
+def test_font_size_in_sync_mode_keeps_marked_verse_big(qapp, fresh_font_setting):
+    view = PlayerWindow()
+    view.set_lyrics(parse_lrc("[00:01.00]a\n[00:02.00]b\n[00:03.00]c\n"))
+    view.set_sync_mode(True, 0)
+    view.change_font_size(4)
+    assert view.lyrics_view.line_item(0).font().pointSize() == round(24 * 1.3)
+    assert view.lyrics_view.line_item(0).text().startswith("▶")

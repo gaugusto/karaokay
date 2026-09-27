@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QEasingCurve, QPropertyAnimation, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QEasingCurve, QPropertyAnimation, QSettings, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -24,6 +24,16 @@ from karaoke.views import dialogs
 from karaoke.views.theme import Colors, media_icon
 
 DEFAULT_VOCAL_VOLUME = 30         # %
+DEFAULT_LYRICS_FONT_SIZE = 20     # pt
+MIN_LYRICS_FONT_SIZE = 12
+MAX_LYRICS_FONT_SIZE = 48
+LYRICS_FONT_STEP = 2
+CURRENT_LINE_SCALE = 1.3          # verso atual 30% maior que os demais
+
+
+def _settings() -> QSettings:
+    """Preferências do usuário (ex.: ~/.config/karaokay/karaoke.ini no Linux)."""
+    return QSettings(QSettings.Format.IniFormat, QSettings.Scope.UserScope, "karaokay", "karaoke")
 DEFAULT_INSTRUMENTAL_VOLUME = 100  # %
 SCROLL_ANIMATION_MS = 350
 
@@ -179,7 +189,6 @@ class PlayerWindow(QWidget):
     sync_line_clicked = Signal(int)          # verso clicado no modo de sincronização
     closed = Signal()
 
-    LINE_FONT_SIZE = 20
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -193,6 +202,7 @@ class PlayerWindow(QWidget):
         self._ask_before_closing = True
         self._sync_mode = False
         self._sync_line = -1
+        self._font_size = self._saved_font_size()
         self._note_timer = QTimer(self)
         self._note_timer.setSingleShot(True)
         self._note_timer.timeout.connect(self._restore_note)
@@ -203,6 +213,20 @@ class PlayerWindow(QWidget):
         self.title_label.setObjectName("songTitle")
         self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.title_label.setWordWrap(True)
+
+        # A− / A+ : tamanho da letra
+        self.font_smaller_button = QPushButton("A−")
+        self.font_larger_button = QPushButton("A+")
+        for button, tip in (
+            (self.font_smaller_button, "Diminuir a letra (Ctrl −)"),
+            (self.font_larger_button, "Aumentar a letra (Ctrl +)"),
+        ):
+            button.setObjectName("fontButton")
+            button.setFixedSize(46, 40)
+            button.setToolTip(tip)
+            button.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # espaço continua sendo play/pause
+        self.font_smaller_button.clicked.connect(lambda: self.change_font_size(-LYRICS_FONT_STEP))
+        self.font_larger_button.clicked.connect(lambda: self.change_font_size(LYRICS_FONT_STEP))
 
         self.lyrics_note = QLabel()
         self.lyrics_note.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -266,7 +290,13 @@ class PlayerWindow(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(28, 22, 28, 22)
         layout.setSpacing(12)
-        layout.addWidget(self.title_label)
+        header = QHBoxLayout()
+        header.setSpacing(8)
+        header.addSpacing(46 * 2 + 8)  # equilibra os botões para o título ficar centralizado
+        header.addWidget(self.title_label, 1)
+        header.addWidget(self.font_smaller_button)
+        header.addWidget(self.font_larger_button)
+        layout.addLayout(header)
         layout.addWidget(self.lyrics_note)
         layout.addWidget(self.lyrics_view, 1)
         layout.addWidget(controls)
@@ -276,6 +306,10 @@ class PlayerWindow(QWidget):
         QShortcut(QKeySequence(Qt.Key.Key_Left), self, lambda: self.seek_relative_requested.emit(-5))
         QShortcut(QKeySequence(Qt.Key.Key_Right), self, lambda: self.seek_relative_requested.emit(5))
         QShortcut(QKeySequence(Qt.Key.Key_Escape), self, lambda: self.sync_button.setChecked(False))
+        for keys, step in (("Ctrl++", LYRICS_FONT_STEP), ("Ctrl+=", LYRICS_FONT_STEP), ("Ctrl+-", -LYRICS_FONT_STEP)):
+            QShortcut(QKeySequence(keys), self, lambda step=step: self.change_font_size(step))
+        QShortcut(QKeySequence("Ctrl+0"), self, lambda: self.set_font_size(DEFAULT_LYRICS_FONT_SIZE))
+        self._update_font_buttons()
 
     # ------------------------------------------------------------ conteúdo
     def set_title(self, title: str) -> None:
@@ -396,11 +430,45 @@ class PlayerWindow(QWidget):
             self._style_line(item, current=True)
         self.lyrics_view.center_on(max(index, 0))
 
+    # ---------------------------------------------------- tamanho da letra
+    @property
+    def font_size(self) -> int:
+        return self._font_size
+
+    def change_font_size(self, delta: int) -> None:
+        self.set_font_size(self._font_size + delta)
+
+    def set_font_size(self, size: int) -> None:
+        """Muda o tamanho da letra, mantém o verso atual no meio e salva a escolha."""
+        size = max(MIN_LYRICS_FONT_SIZE, min(MAX_LYRICS_FONT_SIZE, size))
+        if size == self._font_size:
+            return
+        self._font_size = size
+        for i in range(self.lyrics_view.line_count()):
+            current = i == self._current_line or (self._sync_mode and i == self._sync_line)
+            self._style_line(self.lyrics_view.line_item(i), current=current)
+        center = self._sync_line if self._sync_mode else self._current_line
+        self.lyrics_view.center_on(max(center, 0), animate=False)
+        self._update_font_buttons()
+        _settings().setValue("player/lyrics_font_size", size)
+
+    @staticmethod
+    def _saved_font_size() -> int:
+        try:
+            size = int(_settings().value("player/lyrics_font_size", DEFAULT_LYRICS_FONT_SIZE))
+        except (TypeError, ValueError):
+            size = DEFAULT_LYRICS_FONT_SIZE
+        return max(MIN_LYRICS_FONT_SIZE, min(MAX_LYRICS_FONT_SIZE, size))
+
+    def _update_font_buttons(self) -> None:
+        self.font_smaller_button.setEnabled(self._font_size > MIN_LYRICS_FONT_SIZE)
+        self.font_larger_button.setEnabled(self._font_size < MAX_LYRICS_FONT_SIZE)
+
     def _style_line(self, item: QListWidgetItem | None, current: bool) -> None:
         if item is None:
             return
         font = QFont(self.lyrics_view.font())
-        font.setPointSize(self.LINE_FONT_SIZE + (6 if current else 0))
+        font.setPointSize(round(self._font_size * (CURRENT_LINE_SCALE if current else 1)))
         font.setBold(current)
         item.setFont(font)
         if current:
