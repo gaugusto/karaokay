@@ -25,6 +25,7 @@ htmlcov/
 Thumbs.db
 
 # Mídia local (músicas e vídeos não vão para o repositório)
+músicas/
 media/
 *.mp3
 *.mp4
