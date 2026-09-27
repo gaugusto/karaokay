@@ -35,6 +35,21 @@ músicas dela aparecem na lista da janela, que se atualiza automaticamente.
 Se os downloads começarem a falhar, atualize o yt-dlp (`pip install -U yt-dlp`):
 o YouTube muda com frequência.
 
+### Excluir músicas
+
+Selecione uma música em qualquer uma das listas e aperte **Delete**. Para
+excluir várias de uma vez, selecione-as com Ctrl+clique ou Shift+clique. O app
+pede confirmação e então apaga todos os arquivos da música:
+
+- o áudio em `músicas/`;
+- os vocais e o instrumental em `músicas/separadas/<nome>/`;
+- a letra em `letras/<nome>.lrc` ou `.txt`;
+- os metadados em `músicas/.metadados/<nome>.json`.
+
+A exclusão é definitiva (não vai para a lixeira). Se a música estiver na fila
+ou sendo processada, o processamento é cancelado; se estiver aberta no player,
+ele é fechado.
+
 ### Separação de vocais
 
 A janela tem duas listas, uma sobre a outra:
@@ -122,13 +137,14 @@ src/karaoke/
     song_delegate.py   desenho das músicas nas listas
     player_window.py   janela do player
   controllers/   ligam visões, modelos e serviços
-    app_controller.py  download, fila de processamento e letras
+    app_controller.py  download, fila de processamento, letras e exclusão
     player_controller.py  player: áudio, letra e controles
   services/      integrações externas, rodando em segundo plano
     downloader.py      yt-dlp
     separator.py       audio-separator (BS-RoFormer)
     lyrics.py          busca de letras no LRCLIB
     stem_player.py     mistura e reprodução de vocais + instrumental
+    files.py           remoção dos arquivos de uma música
   paths.py       pastas do projeto
 tests/           testes (pytest)
 músicas/         áudios baixados (fora do git)

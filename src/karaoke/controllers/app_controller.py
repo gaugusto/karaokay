@@ -14,7 +14,13 @@ from karaoke.models import (
     pending_songs,
     processed_songs,
 )
-from karaoke.services import DownloadService, LyricsService, SeparationService, is_youtube_url
+from karaoke.services import (
+    DownloadService,
+    LyricsService,
+    SeparationService,
+    delete_paths,
+    is_youtube_url,
+)
 from karaoke.controllers.player_controller import PlayerController
 from karaoke.views import MainWindow, dialogs
 
@@ -47,6 +53,7 @@ class AppController(QObject):
         self.view.set_models(self.pending, self.processed)
         self.view.url_submitted.connect(self.download)
         self.view.play_requested.connect(self.open_player)
+        self.view.delete_requested.connect(self.delete_songs)
         self.player: PlayerController | None = None
         self.view.close_guard = self._can_close
 
@@ -84,6 +91,48 @@ class AppController(QObject):
         self.player = PlayerController(song, parent=self)
         self.player.closed.connect(self._on_player_closed)
         self.player.start()
+
+    # ----------------------------------------------------------------- excluir
+    def delete_songs(self, paths: list[str]) -> None:
+        """Tecla Delete: confirma e apaga a música e todos os seus arquivos."""
+        songs = [s for s in (self.model.song(p) for p in paths) if s is not None]
+        if not songs:
+            return
+        if len(songs) == 1:
+            title = "Excluir música"
+            question = f"Excluir \"{songs[0].title}\"?"
+        else:
+            title = "Excluir músicas"
+            names = "\n".join(f"• {s.title}" for s in songs[:8])
+            more = f"\n… e mais {len(songs) - 8}" if len(songs) > 8 else ""
+            question = f"Excluir estas {len(songs)} músicas?\n\n{names}{more}"
+        details = (
+            "\n\nSerão apagados o áudio, os vocais e o instrumental separados, "
+            "a letra e os metadados. Esta ação não pode ser desfeita."
+        )
+        if any(s.state is SongState.SEPARATING for s in songs):
+            details += "\nO processamento em andamento será interrompido."
+        if self.player is not None and self.player.song.path in {s.path for s in songs}:
+            details += "\nO player será fechado."
+        if not dialogs.confirm(self.view, title, question + details):
+            return
+
+        if self.player is not None and self.player.song.path in {s.path for s in songs}:
+            self.player.close()
+        errors = []
+        for song in songs:
+            if song.state in (SongState.QUEUED, SongState.SEPARATING):
+                self.separator.discard(song.path)
+            errors += delete_paths(song.related_paths())
+        self.refresh_library()
+
+        if errors:
+            failed = "; ".join(f"{p.name}: {msg}" for p, msg in errors[:3])
+            self.view.show_message(f"Alguns arquivos não puderam ser apagados — {failed}", 15000)
+        elif len(songs) == 1:
+            self.view.show_message(f"Excluída: {songs[0].title}", 5000)
+        else:
+            self.view.show_message(f"{len(songs)} músicas excluídas", 5000)
 
     def _can_close(self) -> bool:
         """Ao fechar a janela principal: confirma se há música tocando e

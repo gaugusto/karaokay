@@ -22,10 +22,30 @@ from karaoke.views.song_delegate import PendingSongDelegate, ProcessedSongDelega
 
 
 class _SongListView(QListView):
+    delete_pressed = Signal(list)  # caminhos das músicas selecionadas
+
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self.setAlternatingRowColors(True)
         self.setEditTriggers(QListView.EditTrigger.NoEditTriggers)
+        # Ctrl/Shift + clique selecionam várias músicas para excluir de uma vez
+        self.setSelectionMode(QListView.SelectionMode.ExtendedSelection)
+
+    def selected_paths(self) -> list[str]:
+        rows = sorted(self.selectionModel().selectedRows(), key=lambda i: i.row())
+        if not rows and self.currentIndex().isValid():
+            rows = [self.currentIndex()]
+        paths = [index.data(MusicLibraryModel.PathRole) for index in rows]
+        return [p for p in paths if p]
+
+    def keyPressEvent(self, event) -> None:
+        if event.key() == Qt.Key.Key_Delete and self.model() is not None:
+            paths = self.selected_paths()
+            if paths:
+                self.delete_pressed.emit(paths)
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
     def viewportEvent(self, event: QEvent) -> bool:
         if event.type() == QEvent.Type.ToolTip:
@@ -74,6 +94,7 @@ class _SongPanel(QWidget):
 class MainWindow(QMainWindow):
     url_submitted = Signal(str)
     play_requested = Signal(str)  # caminho da música processada (dois cliques)
+    delete_requested = Signal(list)  # caminhos das músicas selecionadas (tecla Delete)
 
     def __init__(self) -> None:
         super().__init__()
@@ -93,6 +114,8 @@ class MainWindow(QMainWindow):
         self.processed_panel.view.setItemDelegate(ProcessedSongDelegate(self.processed_panel.view))
         self.processed_panel.view.doubleClicked.connect(self._on_processed_activated)
         self.processed_panel.view.activated.connect(self._on_processed_activated)  # Enter
+        self.pending_panel.view.delete_pressed.connect(self.delete_requested)
+        self.processed_panel.view.delete_pressed.connect(self.delete_requested)
 
         splitter = QSplitter(Qt.Orientation.Vertical)  # a processar em cima, processadas embaixo
         splitter.addWidget(self.pending_panel)

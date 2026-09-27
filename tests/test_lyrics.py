@@ -146,7 +146,9 @@ def test_service_saves_file_and_reports(qapp, tmp_path, monkeypatch):
     done = []
     service.finished.connect(lambda path, state, source: done.append((state, source)))
     base = tmp_path / "letras" / "Artista - Música [abcdefghijk]"
-    service._fetch(tmp_path / "Artista - Música [abcdefghijk].webm", None, base)
+    audio = tmp_path / "Artista - Música [abcdefghijk].webm"
+    audio.write_bytes(b"x")
+    service._fetch(audio, None, base)
     assert done == [(LyricsState.SYNCED, "Artista - Música")]
     assert (tmp_path / "letras" / "Artista - Música [abcdefghijk].lrc").read_text() == SYNCED
 

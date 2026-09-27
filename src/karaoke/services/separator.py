@@ -109,12 +109,19 @@ class SeparationService(QObject):
         self._separator = None
         self._current: str | None = None
         self._last_percent = -1
+        self._discarded: set[str] = set()
         self._queue: queue.Queue[tuple[str, Path]] = queue.Queue()
         threading.Thread(target=self._loop, name="separacao", daemon=True).start()
 
     def enqueue(self, song_path: str | Path, target_dir: Path) -> None:
         """Separa ``song_path`` e grava vocais/instrumental em ``target_dir``."""
+        self._discarded.discard(str(song_path))
         self._queue.put((str(song_path), target_dir))
+
+    def discard(self, song_path: str | Path) -> None:
+        """A música foi apagada: se estiver na fila, é pulada; se estiver sendo
+        processada, o resultado é jogado fora em vez de publicado."""
+        self._discarded.add(str(song_path))
 
     # --------------------------------------------------------------- interno
     def _loop(self) -> None:
@@ -171,6 +178,9 @@ class SeparationService(QObject):
         self._report(2 + int(fraction * 95))
 
     def _separate(self, song_path: str, target_dir: Path) -> None:
+        if song_path in self._discarded or not Path(song_path).exists():
+            self._discarded.discard(song_path)
+            return  # apagada enquanto esperava na fila
         self._current = song_path
         self._last_percent = -1
         self.started.emit(song_path)
@@ -193,6 +203,11 @@ class SeparationService(QObject):
                 produced = ", ".join(p.name for p in self._work_dir.iterdir()) or "nada"
                 raise RuntimeError(f"o modelo não gerou vocais e instrumental (gerou: {produced})")
 
+            if song_path in self._discarded:  # apagada durante o processamento
+                self._discarded.discard(song_path)
+                shutil.rmtree(self._work_dir, ignore_errors=True)
+                self._current = None
+                return
             shutil.rmtree(target_dir, ignore_errors=True)
             target_dir.parent.mkdir(parents=True, exist_ok=True)
             self._work_dir.rename(target_dir)
