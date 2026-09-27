@@ -6,7 +6,7 @@ from PySide6.QtCore import QModelIndex, QPersistentModelIndex
 from PySide6.QtGui import QFont, QPalette
 from PySide6.QtWidgets import QStyledItemDelegate, QStyleOptionViewItem
 
-from karaoke.models import MusicLibraryModel, SongState
+from karaoke.models import LyricsState, MusicLibraryModel, SongState
 
 STATE_LABELS = {
     SongState.NOT_SEPARATED: "aguardando",
@@ -46,6 +46,38 @@ class PendingSongDelegate(QStyledItemDelegate):
             option.palette.setColor(QPalette.ColorRole.Text, dim)
 
 
+LYRICS_LABELS = {
+    LyricsState.UNKNOWN: "",
+    LyricsState.SEARCHING: "buscando letra…",
+    LyricsState.SYNCED: "letra sincronizada",
+    LyricsState.PLAIN: "letra sem sincronia",
+    LyricsState.INSTRUMENTAL: "instrumental",
+    LyricsState.NOT_FOUND: "sem letra",
+    LyricsState.FAILED: "erro ao buscar letra",
+}
+
+
+class ProcessedSongDelegate(QStyledItemDelegate):
+    """Lista de processadas: nome e situação da letra.
+
+    Sem letra sincronizada, o nome fica em cinza.
+    """
+
+    def initStyleOption(
+        self, option: QStyleOptionViewItem, index: QModelIndex | QPersistentModelIndex
+    ) -> None:
+        super().initStyleOption(option, index)
+        song = index.data(MusicLibraryModel.SongRole)
+        if song is None:
+            return
+        label = LYRICS_LABELS.get(song.lyrics_state)
+        if label:
+            option.text = f"{option.text}   — {label}"
+        if song.lyrics_state is not LyricsState.SYNCED:
+            dim = option.palette.color(QPalette.ColorRole.PlaceholderText)
+            option.palette.setColor(QPalette.ColorRole.Text, dim)
+
+
 def song_tooltip(index: QModelIndex) -> str:
     song = index.data(MusicLibraryModel.SongRole)
     if song is None:
@@ -53,4 +85,11 @@ def song_tooltip(index: QModelIndex) -> str:
     text = f"{song.path.name}\n{STATE_TOOLTIPS[song.state]}"
     if song.state is SongState.FAILED and song.error:
         text += f": {song.error}"
+    if song.state is SongState.SEPARATED:
+        lyrics = LYRICS_LABELS.get(song.lyrics_state) or "letra ainda não buscada"
+        text += f"\nLetra: {lyrics}"
+        if song.lyrics_state is LyricsState.FAILED and song.lyrics_error:
+            text += f" ({song.lyrics_error})"
+        if song.lyrics_path:
+            text += f"\n{song.lyrics_path.name}"
     return text

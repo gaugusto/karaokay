@@ -54,6 +54,25 @@ então qualquer formato funciona. Músicas colocadas à mão na pasta `músicas/
 também entram na fila. Se o processamento de uma música falhar, ela fica no fim
 de "A processar" e é tentada de novo na próxima vez que o app abrir.
 
+### Letras
+
+Depois de processada, a música ganha a letra do [LRCLIB](https://lrclib.net),
+salva em `letras/` com o mesmo nome do arquivo de áudio:
+
+- `letras/<nome do áudio>.lrc` quando a letra é **sincronizada** (formato LRC,
+  com o tempo de cada linha);
+- `letras/<nome do áudio>.txt` quando o LRCLIB só tem a letra **sem sincronia**.
+
+A busca usa os dados do vídeo guardados no download (título, artista, canal e
+duração, em `músicas/.metadados/`) e a duração real do áudio: primeiro tenta a
+correspondência exata (`/api/get`, ±2 s) e depois a busca livre (`/api/search`),
+preferindo letras sincronizadas e descartando versões com duração muito
+diferente. A sincronia é verificada no próprio texto: a maioria das linhas
+precisa começar com um tempo `[mm:ss.xx]`, com pelo menos três tempos
+diferentes. Na lista "Processadas" aparece a situação da letra de cada música
+(sincronizada, sem sincronia, sem letra…); as que não têm letra sincronizada
+ficam em cinza. A pasta `letras/` não é rastreada pelo git.
+
 Na primeira separação o modelo (algumas centenas de MB) é baixado para `modelos/`,
 também fora do git. Se o app for fechado no meio de uma separação, ela é refeita
 na próxima vez que ele abrir.
@@ -66,18 +85,21 @@ src/karaoke/
     song.py            Song e SongState (não separada, na fila, separando…)
     library_model.py   MusicLibraryModel (QAbstractListModel das músicas)
     song_lists.py      listas filtradas: a processar e processadas
+    lyrics.py          estado da letra e verificação de sincronia
   views/         widgets: só exibem dados e emitem sinais
     main_window.py     janela principal
-    song_delegate.py   desenho das músicas na fila
+    song_delegate.py   desenho das músicas nas listas
   controllers/   ligam visões, modelos e serviços
-    app_controller.py  fluxo de download e fila de processamento
+    app_controller.py  download, fila de processamento e letras
   services/      integrações externas, rodando em segundo plano
     downloader.py      yt-dlp
     separator.py       audio-separator (BS-RoFormer)
+    lyrics.py          busca de letras no LRCLIB
   paths.py       pastas do projeto
 tests/           testes (pytest)
 músicas/         áudios baixados (fora do git)
   separadas/     vocais e instrumental de cada música
+letras/          letras .lrc/.txt (fora do git)
 modelos/         modelos de separação (fora do git)
 ```
 

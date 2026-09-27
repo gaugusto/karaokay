@@ -83,3 +83,22 @@ def test_song_lists_split_and_order(qapp, dirs):
     model.set_state(b, SongState.SEPARATED)
     assert [s.title for s in pending.songs()] == ["a"]
     assert [s.title for s in processed.songs()] == ["b", "z"]
+
+
+def test_scan_reads_lyrics_state(qapp, dirs):
+    from karaoke.models import LyricsState
+
+    music, separated = dirs
+    add_song(music, "s.m4a")
+    add_song(music, "p.m4a")
+    add_song(music, "n.m4a")
+    letras = music.parent / "letras"
+    letras.mkdir()
+    (letras / "s.lrc").write_text("[00:01.00] a\n[00:02.00] b\n[00:03.00] c\n")
+    (letras / "p.txt").write_text("a\nb\n")
+    model = MusicLibraryModel(music, separated)
+    model.scan()
+    assert model.song(music / "s.m4a").lyrics_state is LyricsState.SYNCED
+    assert model.song(music / "p.m4a").lyrics_state is LyricsState.PLAIN
+    assert model.song(music / "n.m4a").lyrics_state is LyricsState.UNKNOWN
+    assert model.song(music / "s.m4a").lyrics_path == letras / "s.lrc"

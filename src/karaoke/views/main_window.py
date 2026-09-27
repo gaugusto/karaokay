@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from karaoke.views.song_delegate import PendingSongDelegate, song_tooltip
+from karaoke.views.song_delegate import PendingSongDelegate, ProcessedSongDelegate, song_tooltip
 
 
 class _SongListView(QListView):
@@ -86,6 +86,7 @@ class MainWindow(QMainWindow):
         self.pending_panel = _SongPanel("A processar")
         self.pending_panel.view.setItemDelegate(PendingSongDelegate(self.pending_panel.view))
         self.processed_panel = _SongPanel("Processadas")
+        self.processed_panel.view.setItemDelegate(ProcessedSongDelegate(self.processed_panel.view))
 
         splitter = QSplitter(Qt.Orientation.Vertical)  # a processar em cima, processadas embaixo
         splitter.addWidget(self.pending_panel)

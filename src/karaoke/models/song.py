@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from enum import Enum, auto
 from pathlib import Path
 
+from karaoke.models.lyrics import LyricsState, lyrics_state_on_disk
+
 VOCALS_NAME = "vocais"
 INSTRUMENTAL_NAME = "instrumental"
 
@@ -34,8 +36,12 @@ class Song:
     stems_dir: Path
     state: SongState = SongState.NOT_SEPARATED
     error: str | None = None
+    lyrics_base: Path | None = None    # letras/<nome do áudio> (sem extensão)
+    metadata_path: Path | None = None  # metadados do YouTube salvos no download
     added_at: float = 0.0              # quando o arquivo chegou à pasta (mtime)
     queue_position: int | None = None  # ordem de entrada na fila de processamento
+    lyrics_state: LyricsState = LyricsState.UNKNOWN
+    lyrics_error: str | None = None
 
     @property
     def title(self) -> str:
@@ -51,3 +57,14 @@ class Song:
 
     def has_stems_on_disk(self) -> bool:
         return self.vocals_path is not None and self.instrumental_path is not None
+
+    @property
+    def lyrics_path(self) -> Path | None:
+        if self.lyrics_base is None:
+            return None
+        return lyrics_state_on_disk(self.lyrics_base)[1]
+
+    def lyrics_state_on_disk(self) -> LyricsState:
+        if self.lyrics_base is None:
+            return LyricsState.UNKNOWN
+        return lyrics_state_on_disk(self.lyrics_base)[0]

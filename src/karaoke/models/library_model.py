@@ -7,6 +7,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QAbstractListModel, QModelIndex, QPersistentModelIndex, Qt
 
+from karaoke.models.lyrics import LyricsState
 from karaoke.models.song import Song, SongState
 from karaoke.paths import AUDIO_EXTENSIONS
 
@@ -28,10 +29,19 @@ class MusicLibraryModel(QAbstractListModel):
     StateRole = Qt.ItemDataRole.UserRole + 2
     PathRole = Qt.ItemDataRole.UserRole + 3
 
-    def __init__(self, music_dir: Path, separated_dir: Path, parent=None) -> None:
+    def __init__(
+        self,
+        music_dir: Path,
+        separated_dir: Path,
+        lyrics_dir: Path | None = None,
+        metadata_dir: Path | None = None,
+        parent=None,
+    ) -> None:
         super().__init__(parent)
         self.music_dir = music_dir
         self.separated_dir = separated_dir
+        self.lyrics_dir = lyrics_dir or music_dir.parent / "letras"
+        self.metadata_dir = metadata_dir or music_dir / ".metadados"
         self._songs: list[Song] = []
 
     # ------------------------------------------------------- interface Qt
@@ -94,6 +104,8 @@ class MusicLibraryModel(QAbstractListModel):
             song = Song(
                 path=path,
                 stems_dir=self.separated_dir / path.stem,
+                lyrics_base=self.lyrics_dir / path.stem,
+                metadata_path=self.metadata_dir / f"{path.stem}.json",
                 added_at=path.stat().st_mtime,
             )
             self.beginInsertRows(QModelIndex(), row, row)
@@ -108,6 +120,10 @@ class MusicLibraryModel(QAbstractListModel):
                     SongState.SEPARATED if song.has_stems_on_disk() else SongState.NOT_SEPARATED
                 )
                 self.set_state(song.path, disk_state)
+            # Letra: o disco manda, exceto durante a busca ou quando já se sabe
+            # que não há letra (não encontrada, instrumental, erro)
+            if song.lyrics_state in (LyricsState.UNKNOWN, LyricsState.SYNCED, LyricsState.PLAIN):
+                self.set_lyrics_state(song.path, song.lyrics_state_on_disk())
 
     def set_state(self, path: str | Path, state: SongState, error: str | None = None) -> None:
         row = self._row_of(Path(path))
@@ -118,6 +134,19 @@ class MusicLibraryModel(QAbstractListModel):
             return
         song.state = state
         song.error = error
+        self._changed(row)
+
+    def set_lyrics_state(
+        self, path: str | Path, state: LyricsState, error: str | None = None
+    ) -> None:
+        row = self._row_of(Path(path))
+        if row is None:
+            return
+        song = self._songs[row]
+        if song.lyrics_state == state and song.lyrics_error == error:
+            return
+        song.lyrics_state = state
+        song.lyrics_error = error
         self._changed(row)
 
     def set_queue_position(self, path: str | Path, position: int | None) -> None:

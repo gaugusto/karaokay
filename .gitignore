@@ -26,6 +26,7 @@ Thumbs.db
 
 # Mídia local (músicas e vídeos não vão para o repositório)
 músicas/
+letras/
 modelos/
 media/
 *.mp3

@@ -1,4 +1,4 @@
-"""Controlador principal: fluxo de download e separação de vocais."""
+"""Controlador principal: download, fila de processamento e letras."""
 
 from __future__ import annotations
 
@@ -7,8 +7,14 @@ from pathlib import Path
 from PySide6.QtCore import QFileSystemWatcher, QObject
 
 from karaoke import paths
-from karaoke.models import MusicLibraryModel, SongState, pending_songs, processed_songs
-from karaoke.services import DownloadService, SeparationService, is_youtube_url
+from karaoke.models import (
+    LyricsState,
+    MusicLibraryModel,
+    SongState,
+    pending_songs,
+    processed_songs,
+)
+from karaoke.services import DownloadService, LyricsService, SeparationService, is_youtube_url
 from karaoke.views import MainWindow
 
 
@@ -19,15 +25,19 @@ class AppController(QObject):
         model: MusicLibraryModel | None = None,
         downloader: DownloadService | None = None,
         separator: SeparationService | None = None,
+        lyrics: LyricsService | None = None,
         parent=None,
     ) -> None:
         super().__init__(parent)
         self.view = view
-        self.model = model or MusicLibraryModel(paths.MUSIC_DIR, paths.SEPARATED_DIR, self)
-        self.downloader = downloader or DownloadService(paths.MUSIC_DIR, self)
+        self.model = model or MusicLibraryModel(
+            paths.MUSIC_DIR, paths.SEPARATED_DIR, paths.LYRICS_DIR, paths.METADATA_DIR, self
+        )
+        self.downloader = downloader or DownloadService(paths.MUSIC_DIR, paths.METADATA_DIR, self)
         self.separator = separator or SeparationService(
             paths.MODELS_DIR, paths.SEPARATED_DIR / ".em-andamento", self
         )
+        self.lyrics = lyrics or LyricsService(parent=self)
 
         self.pending = pending_songs(self.model, self)
         self.processed = processed_songs(self.model, self)
@@ -46,6 +56,10 @@ class AppController(QObject):
         self.separator.finished.connect(self._on_separation_finished)
         self.separator.failed.connect(self._on_separation_failed)
 
+        self.lyrics.started.connect(self._on_lyrics_started)
+        self.lyrics.finished.connect(self._on_lyrics_finished)
+        self.lyrics.failed.connect(self._on_lyrics_failed)
+
         self.model.music_dir.mkdir(parents=True, exist_ok=True)
         self._watcher = QFileSystemWatcher([str(self.model.music_dir)], self)
         self._watcher.directoryChanged.connect(self.refresh_library)
@@ -62,6 +76,9 @@ class AppController(QObject):
         waiting = self.model.songs_in_state(SongState.NOT_SEPARATED)
         for song in sorted(waiting, key=lambda s: (s.added_at, s.title.casefold())):
             self._queue_separation(song.path)
+        # Processadas que ainda não têm letra
+        for song in self.model.songs_in_state(SongState.SEPARATED):
+            self._queue_lyrics(song.path)
 
     # ---------------------------------------------------------------- download
     def download(self, url: str) -> None:
@@ -103,8 +120,37 @@ class AppController(QObject):
         self.model.set_queue_position(path, None)
         self.model.set_state(path, SongState.SEPARATED)  # vai para "Processadas"
         self.view.show_message(f"Processada: {Path(path).stem}", 5000)
+        self._queue_lyrics(Path(path))
 
     def _on_separation_failed(self, path: str, message: str) -> None:
         self.model.set_queue_position(path, None)
         self.model.set_state(path, SongState.FAILED, message)
         self.view.show_message(f"Falha ao processar {Path(path).stem}: {message}", 15000)
+
+    # ------------------------------------------------------------------ letras
+    # Depois de processada, a música ganha a letra do LRCLIB (em outra fila,
+    # para a busca na internet não atrasar a separação da próxima música).
+    def _queue_lyrics(self, path: Path) -> None:
+        song = self.model.song(path)
+        if song is None or song.lyrics_state is not LyricsState.UNKNOWN:
+            return
+        self.model.set_lyrics_state(path, LyricsState.SEARCHING)
+        self.lyrics.enqueue(path, song.metadata_path, song.lyrics_base)
+
+    def _on_lyrics_started(self, path: str) -> None:
+        self.model.set_lyrics_state(path, LyricsState.SEARCHING)
+
+    def _on_lyrics_finished(self, path: str, state: LyricsState, source: str) -> None:
+        self.model.set_lyrics_state(path, state)
+        messages = {
+            LyricsState.SYNCED: "letra sincronizada encontrada",
+            LyricsState.PLAIN: "letra encontrada, mas sem sincronia",
+            LyricsState.INSTRUMENTAL: "música instrumental, sem letra",
+            LyricsState.NOT_FOUND: "letra não encontrada no LRCLIB",
+        }
+        detail = f" ({source})" if source else ""
+        self.view.show_message(f"{Path(path).stem}: {messages.get(state, '')}{detail}", 8000)
+
+    def _on_lyrics_failed(self, path: str, message: str) -> None:
+        self.model.set_lyrics_state(path, LyricsState.FAILED, message)
+        self.view.show_message(f"Erro ao buscar a letra de {Path(path).stem}: {message}", 10000)

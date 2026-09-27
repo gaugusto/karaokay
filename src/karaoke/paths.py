@@ -11,6 +11,12 @@ MUSIC_DIR = PROJECT_ROOT / "músicas"
 # Vocais e instrumentais separados: músicas/separadas/<nome da música>/
 SEPARATED_DIR = MUSIC_DIR / "separadas"
 
+# Letras baixadas do LRCLIB: letras/<nome do áudio>.lrc (sincronizada) ou .txt
+LYRICS_DIR = PROJECT_ROOT / "letras"
+
+# Metadados do YouTube (título, artista, canal, duração) usados na busca da letra
+METADATA_DIR = MUSIC_DIR / ".metadados"
+
 # Modelos de separação baixados automaticamente (ignorada pelo git)
 MODELS_DIR = PROJECT_ROOT / "modelos"
 

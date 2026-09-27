@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import threading
 from pathlib import Path
 from urllib.parse import urlparse
@@ -39,9 +40,10 @@ class DownloadService(QObject):
     finished = Signal(str)     # caminho do arquivo baixado
     failed = Signal(str)       # mensagem de erro
 
-    def __init__(self, output_dir: Path, parent=None) -> None:
+    def __init__(self, output_dir: Path, metadata_dir: Path | None = None, parent=None) -> None:
         super().__init__(parent)
         self._output_dir = output_dir
+        self._metadata_dir = metadata_dir
         self._busy = False
 
     @property
@@ -88,9 +90,32 @@ class DownloadService(QObject):
                 self.status.emit(f"Baixando: {info.get('title') or url}")
                 info = ydl.process_ie_result(info, download=True)
                 path = info.get("filepath") or ydl.prepare_filename(info)
+            self._save_metadata(Path(path), info)
         except Exception as exc:  # yt-dlp levanta vários tipos de erro
             self._busy = False
             self.failed.emit(str(exc) or exc.__class__.__name__)
             return
         self._busy = False
         self.finished.emit(str(path))
+
+    def _save_metadata(self, audio: Path, info: dict) -> None:
+        """Guarda os dados do vídeo usados depois para achar a letra."""
+        if self._metadata_dir is None:
+            return
+        artists = info.get("artists") or ([info["artist"]] if info.get("artist") else [])
+        data = {
+            "id": info.get("id"),
+            "url": info.get("webpage_url"),
+            "title": info.get("title"),
+            "track": info.get("track"),
+            "artist": ", ".join(artists) or None,
+            "album": info.get("album"),
+            "channel": info.get("channel") or info.get("uploader"),
+            "duration": info.get("duration"),
+        }
+        try:
+            self._metadata_dir.mkdir(parents=True, exist_ok=True)
+            target = self._metadata_dir / f"{audio.stem}.json"
+            target.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        except OSError:
+            pass  # sem metadados a letra é buscada pelo nome do arquivo
