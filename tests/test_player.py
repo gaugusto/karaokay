@@ -214,3 +214,72 @@ def test_double_click_opens_player_only_for_processed(qapp, dirs, monkeypatch):
     assert opened == ["feita"]
     ctrl.open_player(str(nova))  # ainda não processada: ignora
     assert opened == ["feita"]
+
+
+# ------------------------------------------------------------- carga
+def _write_stems(folder, seconds=0.5, rate=8000):
+    import soundfile as sf
+
+    folder.mkdir(parents=True, exist_ok=True)
+    t = np.linspace(0, seconds, int(seconds * rate), endpoint=False)
+    tone = (0.2 * np.sin(2 * np.pi * 440 * t)).astype("float32")
+    sf.write(folder / "vocais.flac", np.column_stack([tone, tone]), rate)
+    sf.write(folder / "instrumental.flac", np.column_stack([tone, -tone]), rate)
+    return folder / "vocais.flac", folder / "instrumental.flac"
+
+
+def _spin(ms):
+    from PySide6.QtCore import QEventLoop, QTimer
+
+    loop = QEventLoop()
+    QTimer.singleShot(ms, loop.quit)
+    loop.exec()
+
+
+@pytest.fixture
+def no_sink(monkeypatch):
+    import karaoke.services.stem_player as sp
+
+    monkeypatch.setattr(sp, "has_audio_output", lambda: True)
+    monkeypatch.setattr(StemPlayer, "_setup_sink", lambda self, d: None)
+
+
+def test_load_delivers_data_on_main_thread(qapp, tmp_path, no_sink):
+    vocals, inst = _write_stems(tmp_path)
+    player = StemPlayer()
+    durations = []
+    player.loaded.connect(durations.append)
+    player.load(vocals, inst)
+    _spin(1000)
+    assert durations == [pytest.approx(0.5)]
+    assert player._frames == 4000 and player._rate == 8000
+
+
+def test_closing_player_during_load_raises_nothing(qapp, tmp_path, no_sink):
+    import threading
+
+    vocals, inst = _write_stems(tmp_path)
+    errors = []
+    previous = threading.excepthook
+    threading.excepthook = lambda args: errors.append(args.exc_value)
+    try:
+        player = StemPlayer()
+        player.load(vocals, inst)
+        player.deleteLater()  # fecha antes de terminar de carregar
+        _spin(1000)
+    finally:
+        threading.excepthook = previous
+    assert errors == []
+
+
+def test_only_latest_load_is_applied(qapp, tmp_path, no_sink):
+    first = _write_stems(tmp_path / "a", seconds=0.5)
+    second = _write_stems(tmp_path / "b", seconds=0.25)
+    player = StemPlayer()
+    durations = []
+    player.loaded.connect(durations.append)
+    player.load(*first)
+    player.load(*second)  # outra música antes da primeira carregar
+    _spin(1000)
+    assert durations == [pytest.approx(0.25)]
+    assert player._frames == 2000

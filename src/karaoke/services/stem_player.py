@@ -12,6 +12,7 @@ from enum import Enum, auto
 from pathlib import Path
 
 import numpy as np
+import shiboken6
 from PySide6.QtCore import QIODevice, QObject, QTimer, Signal
 from PySide6.QtMultimedia import QAudio, QAudioFormat, QAudioSink, QMediaDevices
 
@@ -34,6 +35,10 @@ def load_stem(path: Path) -> tuple[np.ndarray, int]:
     if data.shape[1] == 1:
         data = np.repeat(data, 2, axis=1)
     return np.ascontiguousarray(data[:, :2]), rate
+
+
+def has_audio_output() -> bool:
+    return not QMediaDevices.defaultAudioOutput().isNull()
 
 
 def mix(vocals: np.ndarray, instrumental: np.ndarray, vocal_gain: float, inst_gain: float) -> bytes:
@@ -69,6 +74,9 @@ class StemPlayer(QObject):
     position_changed = Signal(float)  # segundos (≈30 vezes por segundo)
     state_changed = Signal(object)    # PlayerState
     finished = Signal()
+    # Uso interno: entrega o áudio lido pela thread de carga à thread principal
+    _data_ready = Signal(int, object, object, int)
+    _data_failed = Signal(int, str)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -81,6 +89,7 @@ class StemPlayer(QObject):
         self.vocal_volume = 1.0
         self.instrumental_volume = 1.0
         self._state = PlayerState.STOPPED
+        self._generation = 0  # identifica o carregamento mais recente
         self._sink: QAudioSink | None = None
         self._device = _MixDevice(self)
         self._device.open(QIODevice.OpenModeFlag.ReadOnly)
@@ -89,12 +98,22 @@ class StemPlayer(QObject):
         self._timer.setInterval(33)
         self._timer.timeout.connect(self._tick)
         self.loaded.connect(self._setup_sink)
+        self._data_ready.connect(self._apply_data)
+        self._data_failed.connect(self._apply_failure)
 
     # ------------------------------------------------------------- carga
     def load(self, vocals: Path, instrumental: Path) -> None:
-        """Carrega os dois arquivos em segundo plano; emite ``loaded``."""
+        """Carrega os dois arquivos em segundo plano; emite ``loaded``.
+
+        A thread só lê os arquivos. Os dados são entregues à thread principal
+        por sinal, junto com o número do carregamento: resultados de um
+        carregamento antigo são ignorados, e se o player já tiver sido fechado
+        a entrega é descartada sem erro.
+        """
         self.stop()
-        if QMediaDevices.defaultAudioOutput().isNull():
+        self._generation += 1
+        generation = self._generation
+        if not has_audio_output():
             self.load_failed.emit("nenhuma saída de áudio encontrada")
             return
 
@@ -105,14 +124,29 @@ class StemPlayer(QObject):
                 if rate_v != rate_i:
                     raise ValueError("vocais e instrumental com taxas de amostragem diferentes")
                 frames = min(len(voc), len(inst))
-                self._vocals, self._instrumental = voc[:frames], inst[:frames]
-                self._rate, self._frames, self._cursor = rate_v, frames, 0
+                result = (self._data_ready, (generation, voc[:frames], inst[:frames], rate_v))
             except Exception as exc:
-                self.load_failed.emit(str(exc) or exc.__class__.__name__)
-                return
-            self.loaded.emit(self.duration)
+                result = (self._data_failed, (generation, str(exc) or exc.__class__.__name__))
+            signal, args = result
+            if not shiboken6.isValid(self):
+                return  # player fechado durante a carga
+            try:
+                signal.emit(*args)
+            except RuntimeError:
+                pass  # fechado entre a verificação e o envio
 
         threading.Thread(target=work, name="carregar-audio", daemon=True).start()
+
+    def _apply_data(self, generation: int, vocals, instrumental, rate: int) -> None:
+        if generation != self._generation:
+            return  # outra música foi aberta nesse meio-tempo
+        self._vocals, self._instrumental = vocals, instrumental
+        self._rate, self._frames, self._cursor = rate, len(vocals), 0
+        self.loaded.emit(self.duration)
+
+    def _apply_failure(self, generation: int, message: str) -> None:
+        if generation == self._generation:
+            self.load_failed.emit(message)
 
     def _setup_sink(self, _duration: float) -> None:
         if self._sink is not None:
