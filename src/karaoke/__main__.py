@@ -4,14 +4,16 @@ import sys
 
 from PySide6.QtWidgets import QApplication
 
-from karaoke.main_window import MainWindow
+from karaoke.controllers import AppController
+from karaoke.views import MainWindow
 
 
 def main() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName("Karaokê")
     window = MainWindow()
-    window.show()
+    controller = AppController(window)
+    controller.start()
     return app.exec()
 
 

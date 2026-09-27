@@ -45,12 +45,31 @@ Na primeira separação o modelo (algumas centenas de MB) é baixado para `model
 também fora do git. Se o app for fechado no meio de uma separação, ela é refeita
 na próxima vez que ele abrir.
 
-## Estrutura
+## Estrutura (MVC)
 
 ```
-src/karaoke/     código do aplicativo
+src/karaoke/
+  models/        dados e estado, sem interface
+    song.py            Song e SongState (não separada, na fila, separando…)
+    library_model.py   MusicLibraryModel (QAbstractListModel das músicas)
+  views/         widgets: só exibem dados e emitem sinais
+    main_window.py     janela principal
+    song_delegate.py   desenho de cada música na lista
+  controllers/   ligam visões, modelos e serviços
+    app_controller.py  fluxo de download e separação
+  services/      integrações externas, rodando em segundo plano
+    downloader.py      yt-dlp
+    separator.py       audio-separator (BS-RoFormer)
+  paths.py       pastas do projeto
+tests/           testes (pytest)
 músicas/         áudios baixados (fora do git)
   separadas/     vocais e instrumental de cada música
 modelos/         modelos de separação (fora do git)
-tests/           testes
+```
+
+## Testes
+
+```bash
+pip install -e ".[dev]"
+pytest
 ```
