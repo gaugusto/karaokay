@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QEasingCurve, QPropertyAnimation, QSize, Qt, Signal
+from PySide6.QtCore import QEasingCurve, QPropertyAnimation, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -173,6 +173,8 @@ class PlayerWindow(QWidget):
     seek_relative_requested = Signal(float)  # segundos (+/-)
     vocal_volume_changed = Signal(float)
     instrumental_volume_changed = Signal(float)
+    sync_mode_toggled = Signal(bool)         # botão "Sincronizar"
+    sync_line_clicked = Signal(int)          # verso clicado no modo de sincronização
     closed = Signal()
 
     LINE_FONT_SIZE = 18
@@ -187,6 +189,12 @@ class PlayerWindow(QWidget):
         self._slider_held = False
         self._playing = False
         self._ask_before_closing = True
+        self._sync_mode = False
+        self._sync_line = -1
+        self._note_timer = QTimer(self)
+        self._note_timer.setSingleShot(True)
+        self._note_timer.timeout.connect(self._restore_note)
+        self._base_note = ""
 
         self.title_label = QLabel()
         title_font = self.title_label.font()
@@ -209,6 +217,14 @@ class PlayerWindow(QWidget):
         self.play_button.clicked.connect(self.toggle_requested)
         self.set_playing(False)
 
+        self.sync_button = QPushButton("Sincronizar")
+        self.sync_button.setCheckable(True)
+        self.sync_button.setToolTip(
+            "Ajustar a letra: toque a música e clique no primeiro verso\n"
+            "quando ele começar a ser cantado"
+        )
+        self.sync_button.toggled.connect(self.sync_mode_toggled)
+
         self.position_slider = JumpSlider(Qt.Orientation.Horizontal)
         self.position_slider.setRange(0, 0)
         self.position_slider.sliderPressed.connect(self._on_slider_pressed)
@@ -224,6 +240,7 @@ class PlayerWindow(QWidget):
         transport.addWidget(self.play_button)
         transport.addWidget(self.position_slider, 1)
         transport.addWidget(self.time_label)
+        transport.addWidget(self.sync_button)
 
         volumes = QHBoxLayout()
         volumes.addWidget(self.vocal_volume, 1)
@@ -241,6 +258,7 @@ class PlayerWindow(QWidget):
         QShortcut(QKeySequence(Qt.Key.Key_Space), self, self.toggle_requested.emit)
         QShortcut(QKeySequence(Qt.Key.Key_Left), self, lambda: self.seek_relative_requested.emit(-5))
         QShortcut(QKeySequence(Qt.Key.Key_Right), self, lambda: self.seek_relative_requested.emit(5))
+        QShortcut(QKeySequence(Qt.Key.Key_Escape), self, lambda: self.sync_button.setChecked(False))
 
     # ------------------------------------------------------------ conteúdo
     def set_title(self, title: str) -> None:
@@ -251,12 +269,13 @@ class PlayerWindow(QWidget):
         self._lyrics = lyrics
         self._current_line = -1
         if not lyrics.lines:
-            self.lyrics_note.setText("Sem letra para esta música")
+            self._base_note = "Sem letra para esta música"
         elif not lyrics.synced:
-            self.lyrics_note.setText("Letra sem sincronia")
+            self._base_note = "Letra sem sincronia"
         else:
-            self.lyrics_note.setText("")
-        self.lyrics_note.setVisible(bool(self.lyrics_note.text()))
+            self._base_note = ""
+        self._show_note(self._base_note)
+        self.sync_button.setEnabled(lyrics.synced)
         self.lyrics_view.set_lines([line.text or "♪" for line in lyrics.lines])
         for i in range(self.lyrics_view.line_count()):
             self._style_line(self.lyrics_view.line_item(i), current=False)
@@ -269,8 +288,60 @@ class PlayerWindow(QWidget):
             self.time_label.setText("carregando…")
 
     def show_error(self, message: str) -> None:
-        self.lyrics_note.setText(f"Não foi possível abrir o áudio: {message}")
-        self.lyrics_note.setVisible(True)
+        self._base_note = f"Não foi possível abrir o áudio: {message}"
+        self._show_note(self._base_note)
+
+    def show_notice(self, text: str, timeout_ms: int = 4000) -> None:
+        """Mensagem temporária acima da letra, em destaque."""
+        self._show_note(text, emphasized=True)
+        self._note_timer.start(timeout_ms)
+
+    def _show_note(self, text: str, emphasized: bool = False) -> None:
+        self.lyrics_note.setText(text)
+        self.lyrics_note.setEnabled(emphasized)  # desativado = cinza discreto
+        self.lyrics_note.setVisible(bool(text))
+
+    def _restore_note(self) -> None:
+        if self._sync_mode:
+            self._show_note(self._sync_hint(), emphasized=True)
+        else:
+            self._show_note(self._base_note)
+
+    # ------------------------------------------------------ sincronização
+    @staticmethod
+    def _sync_hint() -> str:
+        return "Toque a música e clique no primeiro verso quando ele começar a ser cantado (Esc cancela)"
+
+    @property
+    def in_sync_mode(self) -> bool:
+        return self._sync_mode
+
+    def set_sync_mode(self, active: bool, first_line: int = -1) -> None:
+        """No modo de sincronização a letra fica parada no primeiro verso,
+        marcado com ▶, esperando o clique."""
+        self._sync_mode = active
+        if self.sync_button.isChecked() != active:
+            self.sync_button.blockSignals(True)
+            self.sync_button.setChecked(active)
+            self.sync_button.blockSignals(False)
+        self.sync_button.setText("Cancelar" if active else "Sincronizar")
+        previous = self.lyrics_view.line_item(self._sync_line)
+        if previous is not None:
+            previous.setText(previous.text().removeprefix("▶  "))
+            self._style_line(previous, current=previous is self.lyrics_view.line_item(self._current_line))
+        self._sync_line = first_line if active else -1
+        self._note_timer.stop()
+        self._restore_note()
+        if active:
+            current = self.lyrics_view.line_item(self._current_line)
+            if current is not None:
+                self._style_line(current, current=False)
+            self._current_line = -1
+            item = self.lyrics_view.line_item(first_line)
+            if item is not None:
+                item.setText(f"▶  {item.text()}")
+                self._style_line(item, current=True)
+            self.lyrics_view.center_on(max(first_line, 0))
 
     # -------------------------------------------------------- reprodução
     def set_duration(self, seconds: float) -> None:
@@ -298,7 +369,7 @@ class PlayerWindow(QWidget):
 
         Antes do primeiro verso, o primeiro fica no meio, ainda sem destaque.
         """
-        if index == self._current_line:
+        if index == self._current_line or self._sync_mode:
             return
         previous = self.lyrics_view.line_item(self._current_line)
         if previous is not None:
@@ -326,6 +397,9 @@ class PlayerWindow(QWidget):
 
     # ------------------------------------------------------------ eventos
     def _on_line_clicked(self, index: int) -> None:
+        if self._sync_mode:
+            self.sync_line_clicked.emit(index)
+            return
         line = self._lyrics.lines[index]
         if line.time is not None:
             self.seek_requested.emit(line.time)

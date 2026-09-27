@@ -86,6 +86,11 @@ player. Ele abre pronto para tocar, mas só começa quando você der play.
   voltar/avançar 5 s.
 - **Volume da voz e do instrumental separados**, de 0 a 100% (a voz começa em
   30%).
+- **Sincronizar** manualmente: se a letra estiver adiantada ou atrasada, clique
+  em "Sincronizar", toque a música e clique no primeiro verso (marcado com ▶)
+  no instante em que ele começar a ser cantado. A letra inteira é deslocada e o
+  ajuste fica salvo no próprio `.lrc` (tag padrão `[offset:ms]`), valendo nas
+  próximas vezes. Esc ou "Cancelar" saem sem mudar nada.
 - Clicar em qualquer ponto de uma barra (posição, voz ou instrumental) leva
   direto àquele ponto, e dá para arrastar a partir dali.
 

@@ -427,3 +427,93 @@ def test_main_window_closes_player_and_asks_if_playing(qapp, dirs, answers, monk
     assert view.close()
     assert answers["asked"] == ["Fechar o Karaokê", "Fechar o Karaokê"]
     assert app_ctrl.player is None and not player_view.isVisible()
+
+
+# ------------------------------------------------------- sincronização manual
+def test_offset_roundtrip_and_first_sung_line(tmp_path):
+    from karaoke.models import write_lrc_offset
+
+    path = tmp_path / "a.lrc"
+    path.write_text("[ar:X]\n[00:02.00]\n[00:05.00]Primeiro\n[00:10.00]Segundo\n")
+    lyrics = load_lyrics(path)
+    assert lyrics.first_sung_line() == 1 and lyrics.offset == 0
+
+    write_lrc_offset(path, -1.25)  # atrasa 1,25 s
+    lyrics = load_lyrics(path)
+    assert path.read_text().splitlines()[0] == "[offset:-1250]"
+    assert [l.time for l in lyrics.lines] == [3.25, 6.25, 11.25]
+    assert lyrics.offset == -1.25
+
+    write_lrc_offset(path, 0.5)  # substitui, não acumula tags
+    assert path.read_text().count("[offset:") == 1
+    assert load_lyrics(path).lines[1].time == 4.5
+
+    write_lrc_offset(path, 0)  # zero remove a tag
+    assert "[offset:" not in path.read_text()
+
+
+def test_offset_tag_anywhere_applies_to_all_lines():
+    lyrics = parse_lrc("[00:05.00]a\n[offset:+1000]\n[00:06.00]b\n[00:07.00]c\n")
+    assert [l.time for l in lyrics.lines] == [4.0, 5.0, 6.0]
+
+
+def _open_ready(song):
+    player = FakePlayer()
+    view = PlayerWindow()
+    ctrl = PlayerController(song, view, player)
+    ctrl.start()
+    player.loaded.emit(60.0)
+    return ctrl, view, player
+
+
+def test_manual_sync_shifts_and_saves(song):
+    ctrl, view, player = _open_ready(song)
+    lrc_path = song.lyrics_path
+    assert view.sync_button.isEnabled()
+
+    view.sync_button.click()  # entra no modo de sincronização
+    assert view.in_sync_mode and view.sync_button.text() == "Cancelar"
+    first = ctrl.lyrics.first_sung_line()
+    assert view.lyrics_view.line_item(first).text().startswith("▶")
+
+    player.position_changed.emit(30.0)  # a letra fica parada esperando o clique
+    assert view._current_line == -1
+
+    # verso errado: só avisa
+    player.pos = 6.0
+    view.lyrics_view.itemClicked.emit(view.lyrics_view.line_item(first + 1))
+    assert view.in_sync_mode and "primeiro verso" in view.lyrics_note.text()
+    assert "[offset:" not in lrc_path.read_text()
+
+    # primeiro verso (tempo 5,0 s no LRC) clicado aos 6,2 s: atrasa 1,2 s
+    player.pos = 6.2
+    view.lyrics_view.itemClicked.emit(view.lyrics_view.line_item(first))
+    assert not view.in_sync_mode and view.sync_button.text() == "Sincronizar"
+    assert ctrl.lyrics.lines[first].time == pytest.approx(6.2)
+    assert ctrl.lyrics.lines[first + 1].time == pytest.approx(11.7)
+    assert "[offset:-1200]" in lrc_path.read_text()
+    assert "atrasada em 1,20 s" in view.lyrics_note.text()
+    assert view._current_line == first  # voltou a acompanhar a música
+    assert ("seek", 5.0) not in player.calls  # clique no modo não faz seek
+
+    # reabrir a música mantém o ajuste
+    assert load_lyrics(lrc_path).lines[first].time == pytest.approx(6.2)
+
+    # sincronizar de novo compõe com o ajuste anterior
+    view.sync_button.click()
+    player.pos = 6.0
+    view.lyrics_view.itemClicked.emit(view.lyrics_view.line_item(first))
+    assert ctrl.lyrics.lines[first].time == pytest.approx(6.0)
+    assert "[offset:-1000]" in lrc_path.read_text()
+
+
+def test_sync_can_be_cancelled_and_needs_synced_lyrics(song, tmp_path):
+    ctrl, view, player = _open_ready(song)
+    view.sync_button.click()
+    assert view.in_sync_mode
+    view.sync_button.click()  # "Cancelar"
+    assert not view.in_sync_mode and "[offset:" not in song.lyrics_path.read_text()
+    assert not any(view.lyrics_view.line_item(i).text().startswith("▶") for i in range(5))
+
+    view.set_lyrics(load_lyrics(None))  # sem letra: botão desativado
+    assert not view.sync_button.isEnabled()
