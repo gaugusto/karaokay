@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from karaoke.models import MusicLibraryModel
+from karaoke.models import LyricsState, MusicLibraryModel
 from karaoke.views.song_delegate import PendingSongDelegate, ProcessedSongDelegate, song_tooltip
 
 
@@ -129,7 +129,9 @@ class MainWindow(QMainWindow):
     url_submitted = Signal(str)
     play_requested = Signal(str)  # caminho da música processada (dois cliques)
     delete_requested = Signal(list)  # caminhos das músicas selecionadas (tecla Delete)
-    manual_lyrics_requested = Signal(str)  # botão direito > Buscar letra manualmente…
+    manual_lyrics_requested = Signal(str)  # botão direito > Letra > Buscar letra manualmente…
+    auto_sync_requested = Signal(str)      # botão direito > Letra > Sincronizar automaticamente
+    restore_lyrics_requested = Signal(str)  # botão direito > Letra > Restaurar letra original
 
     def __init__(self) -> None:
         super().__init__()
@@ -216,13 +218,35 @@ class MainWindow(QMainWindow):
         index = view.indexAt(pos)
         if not index.isValid():
             return
+        menu = self.build_processed_menu(index)
+        menu.exec(view.viewport().mapToGlobal(pos))
+
+    def build_processed_menu(self, index: QModelIndex) -> QMenu:
+        """Menu do botão direito de uma música processada (com o submenu Letra)."""
         path = index.data(MusicLibraryModel.PathRole)
-        menu = QMenu(view)
+        song = index.data(MusicLibraryModel.SongRole)
+        menu = QMenu(self.processed_panel.view)
         menu.addAction("Abrir no player", lambda: self.play_requested.emit(path))
-        menu.addAction("Buscar letra manualmente…", lambda: self.manual_lyrics_requested.emit(path))
+
+        lyrics = menu.addMenu("Letra")
+        auto = lyrics.addAction(
+            "Sincronizar automaticamente com os vocais", lambda: self.auto_sync_requested.emit(path)
+        )
+        synced = song is not None and song.lyrics_state is LyricsState.SYNCED
+        auto.setEnabled(synced)
+        if not synced:
+            auto.setText("Sincronizar automaticamente (precisa de letra sincronizada)")
+        restore = lyrics.addAction(
+            "Restaurar letra original", lambda: self.restore_lyrics_requested.emit(path)
+        )
+        backup = song.lyrics_backup_path if song is not None else None
+        restore.setEnabled(bool(backup and backup.is_file()))
+        lyrics.addSeparator()
+        lyrics.addAction("Buscar letra manualmente…", lambda: self.manual_lyrics_requested.emit(path))
+
         menu.addSeparator()
         menu.addAction("Excluir…", lambda: self.delete_requested.emit([path]))
-        menu.exec(view.viewport().mapToGlobal(pos))
+        return menu
 
     def _on_processed_activated(self, index: QModelIndex) -> None:
         path = index.data(MusicLibraryModel.PathRole)
