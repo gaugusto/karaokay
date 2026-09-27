@@ -11,6 +11,25 @@ from PySide6.QtWidgets import QApplication  # noqa: E402
 
 
 @pytest.fixture(scope="session", autouse=True)
+def gc_on_main_thread():
+    """Como no app (karaoke.gc_guard): sem coleta automática, que poderia rodar
+    numa thread de fundo e apagar janelas do Qt fora da thread principal."""
+    import gc
+
+    gc.disable()
+    yield
+    gc.enable()
+
+
+@pytest.fixture(autouse=True)
+def collect_after_test():
+    import gc
+
+    yield
+    gc.collect()  # na thread principal
+
+
+@pytest.fixture(scope="session", autouse=True)
 def isolated_settings(tmp_path_factory):
     """Preferências (QSettings) numa pasta temporária, nunca no ~/.config real."""
     from PySide6.QtCore import QSettings

@@ -142,6 +142,48 @@ app antes de ir para a placa de som, então os dois nunca se dessincronizam e a
 mudança de volume vale na hora. A posição usada para destacar a letra é o tempo
 que a placa de som já tocou de fato, o que desconta o buffer e a latência.
 
+### Teclado
+
+Tudo pode ser usado sem mouse; o elemento com foco fica destacado em violeta.
+
+**Janela principal**
+
+| Tecla | Ação |
+|---|---|
+| Tab / Shift+Tab | barra de link → "A processar" → "Processadas" |
+| Ctrl+L | vai para a barra de link |
+| Enter (na barra) | baixa o link |
+| ↑ ↓ | escolhe a música na lista |
+| Enter (em "Processadas") | abre no player |
+| Delete | exclui (com confirmação); Shift/Ctrl + setas ou clique selecionam várias |
+| Tecla de menu ou Shift+F10 | menu da música (abrir, buscar letra, excluir) |
+
+**Player**
+
+| Tecla | Ação |
+|---|---|
+| Tab / Shift+Tab | play → posição → Sincronizar → voz → instrumental → ⛶ → ✦ → A− → A+ |
+| Espaço | play/pause (num botão com foco, aciona o botão) |
+| ← → | volta/avança 5 s (num slider com foco, mexe nele) |
+| Enter | aciona o botão com foco |
+| Na barra de posição: ← → / Page Up/Down / Home/End | ±5 s / ±30 s / início/fim |
+| Nos volumes: ← → / Page Up/Down | ±5% / ±20% |
+| Ctrl + / Ctrl − / Ctrl 0 | tamanho da letra |
+| F11 | tela cheia; Esc sai |
+| M | na sincronização, marca o primeiro verso (em vez de clicar) |
+| Esc | cancela a sincronização / sai da tela cheia |
+| Ctrl+W | fecha o player |
+
+**Busca de letra**
+
+| Tecla | Ação |
+|---|---|
+| Tab / Shift+Tab | artista → música → Buscar → resultados → letra → botões |
+| Enter (nos campos) | busca de novo (não fecha a janela) |
+| ↓ (nos campos) | vai para os resultados |
+| ↑ ↓ e Enter (nos resultados) | escolhe e usa a letra |
+| Esc | cancela |
+
 ### Modelo de separação
 
 Na primeira separação o modelo (algumas centenas de MB) é baixado para `modelos/`,
@@ -176,6 +218,7 @@ src/karaoke/
     stem_player.py     mistura e reprodução de vocais + instrumental
     files.py           remoção dos arquivos de uma música
   paths.py       pastas do projeto
+  gc_guard.py    coleta de lixo só na thread principal (evita travamentos)
 tests/           testes (pytest)
 músicas/         áudios baixados (fora do git)
   separadas/     vocais e instrumental de cada música

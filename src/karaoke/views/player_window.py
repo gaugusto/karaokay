@@ -5,7 +5,9 @@ from __future__ import annotations
 from PySide6.QtCore import QEasingCurve, QEvent, QPropertyAnimation, QSettings, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
+    QAbstractButton,
     QAbstractItemView,
+    QApplication,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -68,6 +70,9 @@ class _VolumeSlider(QWidget):
         super().__init__(parent)
         self.slider = JumpSlider(Qt.Orientation.Horizontal)
         self.slider.setRange(0, 100)
+        self.slider.setSingleStep(5)   # setas: 5%
+        self.slider.setPageStep(20)    # Page Up/Down: 20%
+        self.slider.setAccessibleName(label)
         self.slider.setValue(value)
         self.slider.setMinimumWidth(120)
         self.value_label = QLabel(f"{value}%")
@@ -203,6 +208,7 @@ class PlayerWindow(QWidget):
         self._ask_before_closing = True
         self._sync_mode = False
         self._sync_line = -1
+        self._shown_once = False
         self._font_size = self._saved_font_size()
         self._note_timer = QTimer(self)
         self._note_timer.setSingleShot(True)
@@ -225,7 +231,6 @@ class PlayerWindow(QWidget):
             button.setObjectName("fontButton")
             button.setFixedSize(46, 40)
             button.setToolTip(tip)
-            button.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # espaço continua sendo play/pause
         # ✦ : liga/desliga o efeito de fundo
         self.background = AnimatedBackground(self)
         self.background.lower()
@@ -233,7 +238,6 @@ class PlayerWindow(QWidget):
         self.effect_button.setObjectName("fontButton")
         self.effect_button.setCheckable(True)
         self.effect_button.setFixedSize(46, 40)
-        self.effect_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.effect_button.toggled.connect(self.set_background_effect)
 
         # ⛶ : tela cheia (F11; Esc sai)
@@ -242,7 +246,6 @@ class PlayerWindow(QWidget):
         self.fullscreen_button.setObjectName("fontButton")
         self.fullscreen_button.setCheckable(True)
         self.fullscreen_button.setFixedSize(46, 40)
-        self.fullscreen_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.fullscreen_button.setToolTip("Tela cheia (F11)")
         self.fullscreen_button.clicked.connect(self.toggle_fullscreen)
         self.effect_button.setChecked(self._saved_background_effect())
@@ -277,6 +280,10 @@ class PlayerWindow(QWidget):
         self.position_slider.setRange(0, 0)
         self.position_slider.sliderPressed.connect(self._on_slider_pressed)
         self.position_slider.sliderReleased.connect(self._on_slider_released)
+        self.position_slider.setSingleStep(5000)   # setas: 5 s
+        self.position_slider.setPageStep(30000)    # Page Up/Down: 30 s
+        self.position_slider.setAccessibleName("Posição da música")
+        self.position_slider.actionTriggered.connect(self._on_slider_action)
         self.time_label = QLabel("0:00 / 0:00")
 
         self.vocal_volume = _VolumeSlider("Voz", DEFAULT_VOCAL_VOLUME)
@@ -326,14 +333,15 @@ class PlayerWindow(QWidget):
         layout.addWidget(controls)
 
         # Atalhos: espaço = play/pause, setas = voltar/avançar 5 s
-        QShortcut(QKeySequence(Qt.Key.Key_Space), self, self.toggle_requested.emit)
-        QShortcut(QKeySequence(Qt.Key.Key_Left), self, lambda: self.seek_relative_requested.emit(-5))
-        QShortcut(QKeySequence(Qt.Key.Key_Right), self, lambda: self.seek_relative_requested.emit(5))
+        # Espaço e setas ficam em keyPressEvent: assim um botão ou slider com
+        # foco usa a tecla primeiro, e só o que sobrar vira play/pause e ±5 s.
+        QShortcut(QKeySequence(QKeySequence.StandardKey.Close), self, self.close)  # Ctrl+W
         QShortcut(QKeySequence(Qt.Key.Key_Escape), self, self._on_escape)
         QShortcut(QKeySequence(Qt.Key.Key_F11), self, self.toggle_fullscreen)
         for keys, step in (("Ctrl++", LYRICS_FONT_STEP), ("Ctrl+=", LYRICS_FONT_STEP), ("Ctrl+-", -LYRICS_FONT_STEP)):
             QShortcut(QKeySequence(keys), self, lambda step=step: self.change_font_size(step))
         QShortcut(QKeySequence("Ctrl+0"), self, lambda: self.set_font_size(DEFAULT_LYRICS_FONT_SIZE))
+        self._setup_tab_order()
         self._update_font_buttons()
 
     # ------------------------------------------------------------ conteúdo
@@ -386,7 +394,10 @@ class PlayerWindow(QWidget):
     # ------------------------------------------------------ sincronização
     @staticmethod
     def _sync_hint() -> str:
-        return "Toque a música e clique no primeiro verso quando ele começar a ser cantado (Esc cancela)"
+        return (
+            "Toque a música e clique no primeiro verso (ou tecle M) quando ele começar "
+            "a ser cantado (Esc cancela)"
+        )
 
     @property
     def in_sync_mode(self) -> bool:
@@ -438,6 +449,7 @@ class PlayerWindow(QWidget):
         self._playing = playing
         self.play_button.setIcon(media_icon("pause" if playing else "play"))
         self.play_button.setToolTip("Pausar (espaço)" if playing else "Tocar (espaço)")
+        self.play_button.setAccessibleName("Pausar" if playing else "Tocar")
 
     def highlight_line(self, index: int) -> None:
         """Destaca o verso atual e o leva, com animação, ao meio da tela.
@@ -454,6 +466,82 @@ class PlayerWindow(QWidget):
         if item is not None:
             self._style_line(item, current=True)
         self.lyrics_view.center_on(max(index, 0))
+
+    # ------------------------------------------------------------ teclado
+    def eventFilter(self, obj, event) -> bool:
+        """Nos botões, ← → voltam/avançam 5 s (o Qt usaria para mover o foco)."""
+        if (
+            event.type() == QEvent.Type.KeyPress
+            and isinstance(obj, QAbstractButton)
+            and event.key() in (Qt.Key.Key_Left, Qt.Key.Key_Right)
+            and event.modifiers() in (Qt.KeyboardModifier.NoModifier, Qt.KeyboardModifier.KeypadModifier)
+        ):
+            self.seek_relative_requested.emit(-5 if event.key() == Qt.Key.Key_Left else 5)
+            return True
+        return super().eventFilter(obj, event)
+
+    def _setup_tab_order(self) -> None:
+        order = [
+            self.play_button,
+            self.position_slider,
+            self.sync_button,
+            self.vocal_volume.slider,
+            self.instrumental_volume.slider,
+            self.fullscreen_button,
+            self.effect_button,
+            self.font_smaller_button,
+            self.font_larger_button,
+        ]
+        for first, second in zip(order, order[1:]):
+            QWidget.setTabOrder(first, second)
+        for widget in order:
+            if isinstance(widget, QAbstractButton):
+                widget.installEventFilter(self)
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        if not self._shown_once:
+            self._shown_once = True
+            self.play_button.setFocus()  # Espaço já toca/pausa ao abrir
+
+    def keyPressEvent(self, event) -> None:
+        """Teclas que o widget com foco não usou.
+
+        Espaço: play/pause · ← →: -5/+5 s · Enter: aciona o botão com foco ·
+        M: marca o primeiro verso no modo de sincronização.
+        """
+        key, mods = event.key(), event.modifiers()
+        plain = mods in (Qt.KeyboardModifier.NoModifier, Qt.KeyboardModifier.KeypadModifier)
+        focus = QApplication.focusWidget()
+        if key == Qt.Key.Key_Space and plain:
+            self.toggle_requested.emit()
+        elif key == Qt.Key.Key_Left and plain:
+            self.seek_relative_requested.emit(-5)
+        elif key == Qt.Key.Key_Right and plain:
+            self.seek_relative_requested.emit(5)
+        elif key in (Qt.Key.Key_Return, Qt.Key.Key_Enter) and isinstance(focus, QAbstractButton):
+            if focus.isEnabled():
+                focus.animateClick()
+        elif key == Qt.Key.Key_M and plain and self._sync_mode:
+            self.sync_line_clicked.emit(self._sync_line)
+        else:
+            super().keyPressEvent(event)
+            return
+        event.accept()
+
+    def _on_slider_action(self, action: int) -> None:
+        """Setas/Page Up/Home/End na barra de posição: pula para o novo ponto."""
+        keyboard_actions = {
+            QSlider.SliderAction.SliderSingleStepAdd,
+            QSlider.SliderAction.SliderSingleStepSub,
+            QSlider.SliderAction.SliderPageStepAdd,
+            QSlider.SliderAction.SliderPageStepSub,
+            QSlider.SliderAction.SliderToMinimum,
+            QSlider.SliderAction.SliderToMaximum,
+        }
+        if QSlider.SliderAction(action) in keyboard_actions and not self._slider_held:
+            # o valor novo só é aplicado depois deste sinal
+            QTimer.singleShot(0, lambda: self.seek_requested.emit(self.position_slider.value() / 1000))
 
     # ------------------------------------------------------------ tela cheia
     @property
