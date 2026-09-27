@@ -15,3 +15,8 @@ def confirm(parent: QWidget | None, title: str, text: str) -> bool:
         QMessageBox.StandardButton.No,
     )
     return answer == QMessageBox.StandardButton.Yes
+
+
+def inform(parent: QWidget | None, title: str, text: str) -> None:
+    """Aviso simples com botão OK."""
+    QMessageBox.information(parent, title, text)

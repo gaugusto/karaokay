@@ -89,6 +89,25 @@ com um tempo `[mm:ss.xx]`, com pelo menos três tempos diferentes. Na lista
 "Processadas" aparece a situação da letra de cada música. A pasta `letras/` não
 é rastreada pelo git.
 
+### Sincronização automática
+
+As letras do LRCLIB costumam estar fora de sincronia com o áudio do YouTube
+(introduções, cortes ou andamento diferentes da versão do álbum). Clique com o
+botão direito numa música processada e escolha **Letra → Sincronizar
+automaticamente com os vocais**. Usando o arquivo de vocais separados, o app:
+
+1. mede quando há voz cantando (quadros de 20 ms);
+2. encontra o deslocamento (até ±90 s) e o andamento (±4%) que fazem a letra
+   bater com a voz;
+3. puxa cada verso para o recomeço da voz mais próximo (até ±1,2 s);
+4. calcula uma **confiança**; só aplica se ela for suficiente. Senão, avisa e
+   não muda nada (provavelmente a letra é de outra versão da música).
+
+A letra original fica guardada (`letras/<nome>.original.lrc`) e pode ser
+recuperada em **Letra → Restaurar letra original**. Se o player estiver aberto
+com a música, a letra é atualizada na hora. Funciona só com letras
+sincronizadas (`.lrc`): letras sem tempos precisariam de reconhecimento de fala.
+
 ### Busca de letra
 
 A janela abre sozinha ao tocar uma música sem letra. Para trocar uma letra
@@ -217,6 +236,7 @@ src/karaoke/
     downloader.py      yt-dlp
     separator.py       audio-separator (BS-RoFormer)
     lyrics.py          busca de letras no LRCLIB (pela janela de busca)
+    auto_sync.py       sincronização automática da letra com os vocais
     stem_player.py     mistura e reprodução de vocais + instrumental
     files.py           remoção dos arquivos de uma música
   paths.py       pastas do projeto

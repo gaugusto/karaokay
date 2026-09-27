@@ -67,7 +67,15 @@ class Song:
             candidates += [
                 self.lyrics_base.with_name(self.lyrics_base.name + ext) for ext in (".lrc", ".txt")
             ]
+            candidates.append(self.lyrics_backup_path)
         return [p for p in candidates if p is not None and (p.exists() or p.is_symlink())]
+
+    @property
+    def lyrics_backup_path(self) -> Path | None:
+        """Cópia da letra antes da sincronização automática (para restaurar)."""
+        if self.lyrics_base is None:
+            return None
+        return self.lyrics_base.with_name(self.lyrics_base.name + ".original.lrc")
 
     @property
     def lyrics_path(self) -> Path | None:

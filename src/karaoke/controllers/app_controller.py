@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
 from PySide6.QtCore import QFileSystemWatcher, QObject
@@ -11,10 +12,13 @@ from karaoke.models import (
     LyricsState,
     MusicLibraryModel,
     SongState,
+    load_lyrics,
     pending_songs,
     processed_songs,
+    retime_lrc,
 )
 from karaoke.services import (
+    AutoSyncService,
     DownloadService,
     SeparationService,
     delete_paths,
@@ -32,6 +36,7 @@ class AppController(QObject):
         model: MusicLibraryModel | None = None,
         downloader: DownloadService | None = None,
         separator: SeparationService | None = None,
+        auto_sync: AutoSyncService | None = None,
         parent=None,
     ) -> None:
         super().__init__(parent)
@@ -44,6 +49,9 @@ class AppController(QObject):
             paths.MODELS_DIR, paths.SEPARATED_DIR / ".em-andamento", self
         )
 
+        self.auto_sync = auto_sync or AutoSyncService(self)
+        self._syncing: set[str] = set()
+
         self.pending = pending_songs(self.model, self)
         self.processed = processed_songs(self.model, self)
         self._next_position = 0
@@ -53,6 +61,10 @@ class AppController(QObject):
         self.view.play_requested.connect(self.open_player)
         self.view.delete_requested.connect(self.delete_songs)
         self.view.manual_lyrics_requested.connect(self.open_manual_search)
+        self.view.auto_sync_requested.connect(self.auto_sync_lyrics)
+        self.view.restore_lyrics_requested.connect(self.restore_original_lyrics)
+        self.auto_sync.finished.connect(self._on_auto_sync_finished)
+        self.auto_sync.failed.connect(self._on_auto_sync_failed)
         self.player: PlayerController | None = None
         self.lyrics_search: LyricsSearchController | None = None
         self.view.close_guard = self._can_close
@@ -219,6 +231,83 @@ class AppController(QObject):
         self.model.set_queue_position(path, None)
         self.model.set_state(path, SongState.FAILED, message)
         self.view.show_message(f"Falha ao processar {Path(path).stem}: {message}", 15000)
+
+    # ------------------------------------------- sincronização automática
+    def auto_sync_lyrics(self, path: str) -> None:
+        """Alinha a letra (.lrc) com o arquivo de vocais, em segundo plano."""
+        song = self.model.song(path)
+        if song is None or song.state is not SongState.SEPARATED or path in self._syncing:
+            return
+        lyrics_path, vocals = song.lyrics_path, song.vocals_path
+        if lyrics_path is None or lyrics_path.suffix != ".lrc" or song.lyrics_state is not LyricsState.SYNCED:
+            self.view.show_message("Só letras sincronizadas (.lrc) podem ser ajustadas automaticamente.", 8000)
+            return
+        if vocals is None:
+            self.view.show_message("Arquivo de vocais não encontrado.", 8000)
+            return
+        self._syncing.add(path)
+        self.view.show_message(f"Sincronizando a letra de {song.title} com os vocais…")
+        self.auto_sync.run(path, vocals, load_lyrics(lyrics_path))
+
+    def _on_auto_sync_finished(self, path: str, result) -> None:
+        self._syncing.discard(path)
+        song = self.model.song(path)
+        if song is None or song.lyrics_path is None:
+            return
+        percent = f"{result.confidence * 100:.0f}%"
+        if not result.ok:
+            self.view.show_message(f"Sincronização automática não aplicada ({song.title})", 8000)
+            dialogs.inform(
+                self.view,
+                "Sincronização automática",
+                f"Não foi possível sincronizar \"{song.title}\" com segurança "
+                f"(confiança {percent}). A letra não foi alterada.\n\n"
+                "Talvez a letra seja de outra versão da música: tente outra pela "
+                "busca manual, ou ajuste no player com o botão Sincronizar.",
+            )
+            return
+        try:
+            backup = song.lyrics_backup_path
+            if backup is not None and not backup.exists():
+                shutil.copy2(song.lyrics_path, backup)  # guarda a original uma vez
+            text = song.lyrics_path.read_text(encoding="utf-8", errors="replace")
+            song.lyrics_path.write_text(retime_lrc(text, result.mapping()), encoding="utf-8")
+        except OSError as exc:
+            self.view.show_message(f"Não foi possível salvar a letra: {exc}", 10000)
+            return
+        if self.player is not None and self.player.song.path == song.path:
+            self.player.reload_lyrics()
+        sign = "+" if result.offset >= 0 else "−"
+        details = f"deslocamento {sign}{abs(result.offset):.1f} s".replace(".", ",")
+        if abs(result.scale - 1.0) > 1e-6:
+            details += f", andamento {result.scale * 100:.1f}%".replace(".", ",")
+        sung = len(result.old_times)
+        self.view.show_message(
+            f"Letra de {song.title} sincronizada: {details}, {result.snapped} de {sung} versos "
+            f"ajustados, confiança {result.confidence_label} ({percent})",
+            15000,
+        )
+
+    def _on_auto_sync_failed(self, path: str, message: str) -> None:
+        self._syncing.discard(path)
+        self.view.show_message(f"Erro na sincronização automática: {message}", 10000)
+
+    def restore_original_lyrics(self, path: str) -> None:
+        song = self.model.song(path)
+        backup = song.lyrics_backup_path if song is not None else None
+        if backup is None or not backup.is_file() or song.lyrics_base is None:
+            return
+        target = song.lyrics_base.with_name(song.lyrics_base.name + ".lrc")
+        try:
+            shutil.copy2(backup, target)
+            backup.unlink()
+        except OSError as exc:
+            self.view.show_message(f"Não foi possível restaurar a letra: {exc}", 10000)
+            return
+        self.refresh_library()
+        if self.player is not None and self.player.song.path == song.path:
+            self.player.reload_lyrics()
+        self.view.show_message(f"Letra original de {song.title} restaurada", 8000)
 
     # ------------------------------------------------------------ letras
     # Letras nunca são baixadas sozinhas: só pela janela de busca, quando o
