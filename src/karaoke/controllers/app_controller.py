@@ -18,7 +18,7 @@ from karaoke.services import (
     DownloadService,
     SeparationService,
     delete_paths,
-    is_youtube_url,
+    normalize_youtube_url,
 )
 from karaoke.controllers.lyrics_search_controller import LyricsSearchController
 from karaoke.controllers.player_controller import PlayerController
@@ -171,8 +171,9 @@ class AppController(QObject):
             self._queue_separation(song.path)
 
     # ---------------------------------------------------------------- download
-    def download(self, url: str) -> None:
-        if not is_youtube_url(url):
+    def download(self, text: str) -> None:
+        url = normalize_youtube_url(text)  # aceita também sem https://
+        if url is None:
             self.view.show_message("Isso não parece um link do YouTube.", 5000)
             return
         if not self.downloader.start(url):

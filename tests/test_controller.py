@@ -74,6 +74,12 @@ def test_startup_queues_by_arrival_order(qapp, dirs):
     assert view.processed_panel.header.text() == "Processadas (1)"
 
 
+def test_link_without_https_is_completed(qapp, dirs):
+    view, ctrl = make(dirs)
+    view.url_submitted.emit("youtu.be/DRhEueqE7Uw")
+    assert ctrl.downloader.urls == ["https://youtu.be/DRhEueqE7Uw"]
+
+
 def test_rejects_non_youtube_url(qapp, dirs):
     view, ctrl = make(dirs)
     view.url_submitted.emit("https://exemplo.com/video")
