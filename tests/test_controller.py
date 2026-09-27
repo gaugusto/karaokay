@@ -37,6 +37,9 @@ class FakeSeparator(QObject):
     def enqueue(self, path, target_dir):
         self.jobs.append((str(path), target_dir))
 
+    def discard(self, path):
+        self.discarded = getattr(self, "discarded", []) + [str(path)]
+
 
 class FakeLyrics(QObject):
     started = Signal(str)

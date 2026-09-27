@@ -59,6 +59,16 @@ class Song:
     def has_stems_on_disk(self) -> bool:
         return self.vocals_path is not None and self.instrumental_path is not None
 
+    def related_paths(self) -> list[Path]:
+        """Todos os arquivos e pastas da música que existem no disco:
+        áudio, vocais/instrumental separados, letra (.lrc/.txt) e metadados."""
+        candidates = [self.path, self.stems_dir, self.metadata_path]
+        if self.lyrics_base is not None:
+            candidates += [
+                self.lyrics_base.with_name(self.lyrics_base.name + ext) for ext in (".lrc", ".txt")
+            ]
+        return [p for p in candidates if p is not None and (p.exists() or p.is_symlink())]
+
     @property
     def lyrics_path(self) -> Path | None:
         if self.lyrics_base is None:

@@ -257,9 +257,13 @@ class LyricsService(QObject):
             self._fetch(*self._queue.get())
 
     def _fetch(self, audio: Path, metadata_path: Path | None, lyrics_base: Path) -> None:
+        if not audio.exists():
+            return  # música apagada antes da busca
         self.started.emit(str(audio))
         try:
             result = find_lyrics(self._client, load_track_info(audio, metadata_path))
+            if not audio.exists():
+                return  # apagada durante a busca: não deixa letra órfã
             save_lyrics(result, lyrics_base)
         except Exception as exc:
             self.failed.emit(str(audio), str(exc) or exc.__class__.__name__)

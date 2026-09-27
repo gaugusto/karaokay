@@ -1,5 +1,6 @@
 import sys
 import types
+from pathlib import Path
 
 import pytest
 
@@ -58,8 +59,9 @@ def test_separation_publishes_complete_folder(service, tmp_path):
     service.finished.connect(done.append)
     target = tmp_path / "separadas" / "musica"
     FakeSeparator.fail = False
-    service._separate("musica.m4a", target)
-    assert done == ["musica.m4a"]
+    song = _audio(tmp_path, "musica.m4a")
+    service._separate(song, target)
+    assert done == [song]
     assert sorted(p.name for p in target.iterdir()) == ["instrumental.flac", "vocais.flac"]
     assert not (tmp_path / "trabalho").exists()
 
@@ -69,7 +71,7 @@ def test_separation_failure_leaves_nothing_behind(service, tmp_path):
     service.failed.connect(lambda path, msg: errors.append(msg))
     target = tmp_path / "separadas" / "musica"
     FakeSeparator.fail = True
-    service._separate("musica.m4a", target)
+    service._separate(_audio(tmp_path, "musica.m4a"), target)
     assert errors == ["erro simulado"]
     assert not target.exists()
     assert not (tmp_path / "trabalho").exists()
@@ -98,10 +100,10 @@ def test_queue_is_fifo_and_never_concurrent(service, tmp_path, qapp):
     FakeSeparator.separate = slow_separate
     try:
         loop = QEventLoop()
-        service.started.connect(order.append)
-        service.finished.connect(lambda p: loop.quit() if p == "m4" else None)
+        service.started.connect(lambda p: order.append(Path(p).name))
+        service.finished.connect(lambda p: loop.quit() if Path(p).name == "m4" else None)
         for name in ["m1", "m2", "m3", "m4"]:
-            service.enqueue(name, tmp_path / "separadas" / name)
+            service.enqueue(_audio(tmp_path, name), tmp_path / "separadas" / name)
         QTimer.singleShot(5000, loop.quit)
         loop.exec()
     finally:
@@ -145,7 +147,7 @@ def test_separation_reports_percent(service, tmp_path):
         separator_module_mdxc.tqdm = __import__(
             "karaoke.services.separator", fromlist=["_progress_factory"]
         )._progress_factory(service._on_inference_progress)
-        service._separate("musica.m4a", tmp_path / "separadas" / "musica")
+        service._separate(_audio(tmp_path, "musica.m4a"), tmp_path / "separadas" / "musica")
     finally:
         FakeSeparator.separate = original
     assert percents == [0, 2, 25, 49, 73, 97, 100]
@@ -156,3 +158,9 @@ class _Mdxc:
 
 
 separator_module_mdxc = _Mdxc
+
+
+def _audio(folder, name):
+    path = folder / name
+    path.write_bytes(b"x")
+    return str(path)
