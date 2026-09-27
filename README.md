@@ -37,12 +37,22 @@ o YouTube muda com frequência.
 
 ### Separação de vocais
 
-Assim que um download termina, a música entra numa fila e é separada em vocais e
-instrumental com o BS-RoFormer (`model_bs_roformer_ep_317_sdr_12.9755.ckpt`), via
-[audio-separator](https://github.com/nomadkaraoke/python-audio-separator). O
+A janela tem duas listas:
+
+- **A processar**: músicas que ainda precisam ter os vocais separados, na ordem
+  de chegada. Elas são processadas por uma fila, uma de cada vez, nunca em
+  paralelo. A que está sendo processada aparece em primeiro, em negrito.
+- **Processadas**: músicas já separadas, em ordem alfabética.
+
+Assim que uma música termina de ser processada, ela sai de "A processar" e vai
+para "Processadas". A separação usa o BS-RoFormer
+(`model_bs_roformer_ep_317_sdr_12.9755.ckpt`), via
+[audio-separator](https://github.com/nomadkaraoke/python-audio-separator), e o
 resultado fica em `músicas/separadas/<nome da música>/vocais.flac` e
 `instrumental.flac`. Antes de separar, o áudio é decodificado com o ffmpeg,
-então qualquer formato funciona. Na lista, músicas ainda não separadas aparecem em cinza.
+então qualquer formato funciona. Músicas colocadas à mão na pasta `músicas/`
+também entram na fila. Se o processamento de uma música falhar, ela fica no fim
+de "A processar" e é tentada de novo na próxima vez que o app abrir.
 
 Na primeira separação o modelo (algumas centenas de MB) é baixado para `modelos/`,
 também fora do git. Se o app for fechado no meio de uma separação, ela é refeita
@@ -55,11 +65,12 @@ src/karaoke/
   models/        dados e estado, sem interface
     song.py            Song e SongState (não separada, na fila, separando…)
     library_model.py   MusicLibraryModel (QAbstractListModel das músicas)
+    song_lists.py      listas filtradas: a processar e processadas
   views/         widgets: só exibem dados e emitem sinais
     main_window.py     janela principal
-    song_delegate.py   desenho de cada música na lista
+    song_delegate.py   desenho das músicas na fila
   controllers/   ligam visões, modelos e serviços
-    app_controller.py  fluxo de download e separação
+    app_controller.py  fluxo de download e fila de processamento
   services/      integrações externas, rodando em segundo plano
     downloader.py      yt-dlp
     separator.py       audio-separator (BS-RoFormer)

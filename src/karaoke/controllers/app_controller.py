@@ -7,7 +7,7 @@ from pathlib import Path
 from PySide6.QtCore import QFileSystemWatcher, QObject
 
 from karaoke import paths
-from karaoke.models import MusicLibraryModel, SongState
+from karaoke.models import MusicLibraryModel, SongState, pending_songs, processed_songs
 from karaoke.services import DownloadService, SeparationService, is_youtube_url
 from karaoke.views import MainWindow
 
@@ -29,7 +29,11 @@ class AppController(QObject):
             paths.MODELS_DIR, paths.SEPARATED_DIR / ".em-andamento", self
         )
 
-        self.view.set_model(self.model)
+        self.pending = pending_songs(self.model, self)
+        self.processed = processed_songs(self.model, self)
+        self._next_position = 0
+
+        self.view.set_models(self.pending, self.processed)
         self.view.url_submitted.connect(self.download)
 
         self.downloader.progress.connect(self.view.set_download_progress)
@@ -52,9 +56,11 @@ class AppController(QObject):
 
     # -------------------------------------------------------------- biblioteca
     def refresh_library(self, *_args) -> None:
-        """Sincroniza com a pasta e manda para a fila o que falta separar."""
+        """Sincroniza com a pasta e manda para a fila, por ordem de chegada,
+        as músicas que ainda não foram processadas."""
         self.model.scan()
-        for song in self.model.songs_in_state(SongState.NOT_SEPARATED):
+        waiting = self.model.songs_in_state(SongState.NOT_SEPARATED)
+        for song in sorted(waiting, key=lambda s: (s.added_at, s.title.casefold())):
             self._queue_separation(song.path)
 
     # ---------------------------------------------------------------- download
@@ -71,7 +77,7 @@ class AppController(QObject):
         self.view.set_download_running(False)
         self.view.clear_url()
         self.refresh_library()
-        self.view.select(self.model.index_of(path))
+        self.view.select_pending(self.pending.index_of(path))
         self.view.show_message("Download concluído.", 5000)
 
     def _on_download_failed(self, message: str) -> None:
@@ -79,27 +85,26 @@ class AppController(QObject):
         self.view.show_message(f"Falha no download: {message}", 10000)
 
     # --------------------------------------------------------------- separação
+    # A fila é FIFO e o SeparationService processa uma música por vez, numa
+    # única thread; queue_position registra a ordem de entrada para a visão.
     def _queue_separation(self, path: Path) -> None:
         song = self.model.song(path)
         if song is None or song.state is not SongState.NOT_SEPARATED:
             return
+        self._next_position += 1
+        self.model.set_queue_position(path, self._next_position)
         self.model.set_state(path, SongState.QUEUED)
         self.separator.enqueue(path, song.stems_dir)
-        self._update_separation_count()
 
     def _on_separation_started(self, path: str) -> None:
         self.model.set_state(path, SongState.SEPARATING)
 
     def _on_separation_finished(self, path: str) -> None:
-        self.model.set_state(path, SongState.SEPARATED)
-        self._update_separation_count()
-        self.view.show_message(f"Vocais separados: {Path(path).stem}", 5000)
+        self.model.set_queue_position(path, None)
+        self.model.set_state(path, SongState.SEPARATED)  # vai para "Processadas"
+        self.view.show_message(f"Processada: {Path(path).stem}", 5000)
 
     def _on_separation_failed(self, path: str, message: str) -> None:
+        self.model.set_queue_position(path, None)
         self.model.set_state(path, SongState.FAILED, message)
-        self._update_separation_count()
-        self.view.show_message(f"Falha ao separar {Path(path).stem}: {message}", 15000)
-
-    def _update_separation_count(self) -> None:
-        busy = self.model.songs_in_state(SongState.QUEUED, SongState.SEPARATING)
-        self.view.set_separation_count(len(busy))
+        self.view.show_message(f"Falha ao processar {Path(path).stem}: {message}", 15000)

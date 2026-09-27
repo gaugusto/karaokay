@@ -72,6 +72,9 @@ class DownloadService(QObject):
             "format": "bestaudio/best",
             "outtmpl": str(self._output_dir / "%(title)s [%(id)s].%(ext)s"),
             "noplaylist": True,
+            # Mantém a data do arquivo como o momento do download (ordem de chegada),
+            # em vez da data de publicação do vídeo
+            "updatetime": False,
             "windowsfilenames": True,
             "quiet": True,
             "no_warnings": True,

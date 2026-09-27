@@ -24,9 +24,11 @@ def dirs(tmp_path):
     return music, separated
 
 
-def add_song(music: Path, name: str) -> Path:
+def add_song(music: Path, name: str, mtime: float | None = None) -> Path:
     path = music / name
     path.write_bytes(b"x")
+    if mtime is not None:
+        os.utime(path, (mtime, mtime))
     return path
 
 

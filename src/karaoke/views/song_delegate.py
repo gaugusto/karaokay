@@ -1,40 +1,47 @@
-"""Desenho de cada música na lista."""
+"""Desenho de cada música nas listas."""
 
 from __future__ import annotations
 
 from PySide6.QtCore import QModelIndex, QPersistentModelIndex
-from PySide6.QtGui import QPalette
+from PySide6.QtGui import QFont, QPalette
 from PySide6.QtWidgets import QStyledItemDelegate, QStyleOptionViewItem
 
 from karaoke.models import MusicLibraryModel, SongState
 
 STATE_LABELS = {
-    SongState.QUEUED: "na fila para separar",
-    SongState.SEPARATING: "separando vocais…",
-    SongState.FAILED: "falha na separação",
+    SongState.NOT_SEPARATED: "aguardando",
+    SongState.QUEUED: "aguardando",
+    SongState.SEPARATING: "processando…",
+    SongState.FAILED: "falha no processamento",
 }
 
 STATE_TOOLTIPS = {
-    SongState.NOT_SEPARATED: "Vocais ainda não separados",
-    SongState.QUEUED: "Na fila para separar os vocais",
-    SongState.SEPARATING: "Separando os vocais…",
-    SongState.SEPARATED: "Vocais separados",
-    SongState.FAILED: "Falha na separação",
+    SongState.NOT_SEPARATED: "Aguardando entrar na fila",
+    SongState.QUEUED: "Na fila, aguardando a vez",
+    SongState.SEPARATING: "Separando vocais e instrumental…",
+    SongState.SEPARATED: "Vocais e instrumental separados",
+    SongState.FAILED: "Falha no processamento",
 }
 
 
-class SongDelegate(QStyledItemDelegate):
-    """Mostra o estado ao lado do nome e deixa em cinza as não separadas."""
+class PendingSongDelegate(QStyledItemDelegate):
+    """Lista a processar: posição na fila, nome e estado.
+
+    A música em processamento aparece em negrito; as que falharam, em cinza.
+    """
 
     def initStyleOption(
         self, option: QStyleOptionViewItem, index: QModelIndex | QPersistentModelIndex
     ) -> None:
         super().initStyleOption(option, index)
         state = index.data(MusicLibraryModel.StateRole)
-        label = STATE_LABELS.get(state)
-        if label:
-            option.text = f"{option.text}   — {label}"
-        if state != SongState.SEPARATED:
+        prefix = f"{index.row() + 1}.  " if state in (SongState.QUEUED, SongState.SEPARATING) else ""
+        option.text = f"{prefix}{option.text}   — {STATE_LABELS.get(state, '')}"
+        if state is SongState.SEPARATING:
+            font = QFont(option.font)
+            font.setBold(True)
+            option.font = font
+        elif state is SongState.FAILED:
             dim = option.palette.color(QPalette.ColorRole.PlaceholderText)
             option.palette.setColor(QPalette.ColorRole.Text, dim)
 
@@ -44,6 +51,6 @@ def song_tooltip(index: QModelIndex) -> str:
     if song is None:
         return ""
     text = f"{song.path.name}\n{STATE_TOOLTIPS[song.state]}"
-    if song.state == SongState.FAILED and song.error:
+    if song.state is SongState.FAILED and song.error:
         text += f": {song.error}"
     return text

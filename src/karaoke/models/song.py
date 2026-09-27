@@ -11,10 +11,10 @@ INSTRUMENTAL_NAME = "instrumental"
 
 
 class SongState(Enum):
-    NOT_SEPARATED = auto()  # só o áudio original
-    QUEUED = auto()         # aguardando a separação
-    SEPARATING = auto()     # separação em andamento
-    SEPARATED = auto()      # vocais e instrumental prontos
+    NOT_SEPARATED = auto()  # só o áudio original, ainda fora da fila
+    QUEUED = auto()         # na fila, aguardando a vez
+    SEPARATING = auto()     # sendo processada agora
+    SEPARATED = auto()      # vocais e instrumental prontos (processada)
     FAILED = auto()         # a separação deu erro
 
     @property
@@ -34,6 +34,8 @@ class Song:
     stems_dir: Path
     state: SongState = SongState.NOT_SEPARATED
     error: str | None = None
+    added_at: float = 0.0              # quando o arquivo chegou à pasta (mtime)
+    queue_position: int | None = None  # ordem de entrada na fila de processamento
 
     @property
     def title(self) -> str:

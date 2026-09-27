@@ -73,3 +73,39 @@ def test_separation_failure_leaves_nothing_behind(service, tmp_path):
     assert errors == ["erro simulado"]
     assert not target.exists()
     assert not (tmp_path / "trabalho").exists()
+
+
+def test_queue_is_fifo_and_never_concurrent(service, tmp_path, qapp):
+    import threading
+    import time
+
+    from PySide6.QtCore import QEventLoop, QTimer
+
+    active, peak, order = [0], [0], []
+    lock = threading.Lock()
+    original = FakeSeparator.separate
+
+    def slow_separate(self, path, custom_output_names=None):
+        with lock:
+            active[0] += 1
+            peak[0] = max(peak[0], active[0])
+        time.sleep(0.05)
+        original(self, path, custom_output_names)
+        with lock:
+            active[0] -= 1
+
+    FakeSeparator.fail = False
+    FakeSeparator.separate = slow_separate
+    try:
+        loop = QEventLoop()
+        service.started.connect(order.append)
+        service.finished.connect(lambda p: loop.quit() if p == "m4" else None)
+        for name in ["m1", "m2", "m3", "m4"]:
+            service.enqueue(name, tmp_path / "separadas" / name)
+        QTimer.singleShot(5000, loop.quit)
+        loop.exec()
+    finally:
+        FakeSeparator.separate = original
+
+    assert order == ["m1", "m2", "m3", "m4"]
+    assert peak[0] == 1

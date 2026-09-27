@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from conftest import add_song, add_stems
 from PySide6.QtCore import QObject, Signal
 
@@ -47,17 +49,25 @@ def make(dirs):
     return view, ctrl
 
 
-def test_startup_queues_only_unseparated(qapp, dirs):
+def titles(proxy):
+    return [s.title for s in proxy.songs()]
+
+
+def test_startup_queues_by_arrival_order(qapp, dirs):
     music, separated = dirs
-    add_song(music, "feita.m4a")
-    nova = add_song(music, "nova.m4a")
+    add_song(music, "feita.m4a", mtime=1)
+    add_song(music, "b.m4a", mtime=30)
+    add_song(music, "a.m4a", mtime=20)
+    add_song(music, "c.m4a", mtime=10)
     add_stems(separated, "feita")
     view, ctrl = make(dirs)
     ctrl.refresh_library()
-    assert [j[0] for j in ctrl.separator.jobs] == [str(nova)]
-    assert ctrl.separator.jobs[0][1] == separated / "nova"
-    assert ctrl.model.song(nova).state is SongState.QUEUED
-    assert view.separation_label.text() == "Separando 1 música"
+    assert [Path(j[0]).stem for j in ctrl.separator.jobs] == ["c", "a", "b"]
+    assert ctrl.separator.jobs[0][1] == separated / "c"
+    assert titles(ctrl.pending) == ["c", "a", "b"]
+    assert titles(ctrl.processed) == ["feita"]
+    assert view.pending_panel.header.text() == "A processar (3)"
+    assert view.processed_panel.header.text() == "Processadas (1)"
 
 
 def test_rejects_non_youtube_url(qapp, dirs):
@@ -67,32 +77,56 @@ def test_rejects_non_youtube_url(qapp, dirs):
     assert "YouTube" in view.statusBar().currentMessage()
 
 
-def test_download_then_separation_flow(qapp, dirs):
+def test_new_download_goes_to_end_of_queue(qapp, dirs):
     music, _ = dirs
+    add_song(music, "antiga.m4a", mtime=10)
     view, ctrl = make(dirs)
+    ctrl.refresh_library()
+
     view.url_submitted.emit("https://youtu.be/abc")
     assert ctrl.downloader.urls == ["https://youtu.be/abc"]
     assert not view.url_bar.isEnabled()
 
-    song = add_song(music, "Canção [abc].webm")
+    song = add_song(music, "Canção [abc].webm")  # mtime atual: chegou por último
     ctrl.downloader.finished.emit(str(song))
     assert view.url_bar.isEnabled()
-    assert view.song_list.currentIndex().data() == "Canção [abc]"
-    assert len(ctrl.separator.jobs) == 1  # não duplica mesmo com o watcher
-
-    ctrl.separator.started.emit(str(song))
-    assert ctrl.model.song(song).state is SongState.SEPARATING
-    ctrl.separator.finished.emit(str(song))
-    assert ctrl.model.song(song).state is SongState.SEPARATED
-    assert not view.separation_label.isVisible()
+    assert titles(ctrl.pending) == ["antiga", "Canção [abc]"]
+    assert view.pending_panel.view.currentIndex().data() == "Canção [abc]"
+    assert len(ctrl.separator.jobs) == 2  # não duplica mesmo com o watcher
 
 
-def test_failed_separation_is_not_retried_until_restart(qapp, dirs):
+def test_processed_song_moves_between_lists(qapp, dirs):
     music, _ = dirs
-    song = add_song(music, "a.m4a")
+    a = add_song(music, "a.m4a", mtime=10)
+    b = add_song(music, "b.m4a", mtime=20)
     view, ctrl = make(dirs)
     ctrl.refresh_library()
-    ctrl.separator.failed.emit(str(song), "sem memória")
-    assert ctrl.model.song(song).state is SongState.FAILED
+
+    ctrl.separator.started.emit(str(a))
+    assert ctrl.model.song(a).state is SongState.SEPARATING
+    assert titles(ctrl.pending) == ["a", "b"]
+
+    ctrl.separator.finished.emit(str(a))
+    assert titles(ctrl.pending) == ["b"]
+    assert titles(ctrl.processed) == ["a"]
+    assert view.pending_panel.header.text() == "A processar (1)"
+    assert view.processed_panel.header.text() == "Processadas (1)"
+
+    ctrl.separator.started.emit(str(b))
+    ctrl.separator.finished.emit(str(b))
+    assert titles(ctrl.pending) == []
+    assert titles(ctrl.processed) == ["a", "b"]
+
+
+def test_failed_song_stays_pending_and_is_not_retried_until_restart(qapp, dirs):
+    music, _ = dirs
+    a = add_song(music, "a.m4a", mtime=10)
+    add_song(music, "b.m4a", mtime=20)
+    view, ctrl = make(dirs)
     ctrl.refresh_library()
-    assert len(ctrl.separator.jobs) == 1
+    ctrl.separator.started.emit(str(a))
+    ctrl.separator.failed.emit(str(a), "sem memória")
+    assert ctrl.model.song(a).state is SongState.FAILED
+    assert titles(ctrl.pending) == ["b", "a"]  # falha vai para o fim
+    ctrl.refresh_library()
+    assert len(ctrl.separator.jobs) == 2

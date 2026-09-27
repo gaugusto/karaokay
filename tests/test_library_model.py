@@ -62,3 +62,24 @@ def test_set_state_emits_data_changed(qapp, dirs):
     assert changed == [0]
     assert model.data(model.index(0), MusicLibraryModel.StateRole) is SongState.FAILED
     assert model.song(a).error == "erro"
+
+
+def test_song_lists_split_and_order(qapp, dirs):
+    from conftest import add_song as add
+
+    from karaoke.models import pending_songs, processed_songs
+
+    music, separated = dirs
+    add(music, "z.m4a", mtime=1)
+    b = add(music, "b.m4a", mtime=2)
+    add(music, "a.m4a", mtime=3)
+    add_stems(separated, "z")
+    model = MusicLibraryModel(music, separated)
+    model.scan()
+    pending, processed = pending_songs(model), processed_songs(model)
+    assert [s.title for s in pending.songs()] == ["b", "a"]  # ordem de chegada
+    assert [s.title for s in processed.songs()] == ["z"]
+
+    model.set_state(b, SongState.SEPARATED)
+    assert [s.title for s in pending.songs()] == ["a"]
+    assert [s.title for s in processed.songs()] == ["b", "z"]

@@ -91,7 +91,11 @@ class MusicLibraryModel(QAbstractListModel):
         keys = [_sort_key(s.path) for s in self._songs]
         for path in sorted(on_disk - known, key=_sort_key):
             row = bisect.bisect_right(keys, _sort_key(path))
-            song = Song(path=path, stems_dir=self.separated_dir / path.stem)
+            song = Song(
+                path=path,
+                stems_dir=self.separated_dir / path.stem,
+                added_at=path.stat().st_mtime,
+            )
             self.beginInsertRows(QModelIndex(), row, row)
             self._songs.insert(row, song)
             keys.insert(row, _sort_key(path))
@@ -114,10 +118,21 @@ class MusicLibraryModel(QAbstractListModel):
             return
         song.state = state
         song.error = error
-        index = self.index(row)
-        self.dataChanged.emit(index, index, [self.StateRole, Qt.ItemDataRole.DisplayRole])
+        self._changed(row)
+
+    def set_queue_position(self, path: str | Path, position: int | None) -> None:
+        row = self._row_of(Path(path))
+        if row is None or self._songs[row].queue_position == position:
+            return
+        self._songs[row].queue_position = position
+        self._changed(row)
 
     # --------------------------------------------------------------- interno
+    def _changed(self, row: int) -> None:
+        index = self.index(row)
+        # Sem lista de papéis: os proxies refiltram e reordenam em qualquer mudança
+        self.dataChanged.emit(index, index, [])
+
     def _row_of(self, path: Path) -> int | None:
         for row, song in enumerate(self._songs):
             if song.path == path:
