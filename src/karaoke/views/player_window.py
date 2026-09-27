@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QEasingCurve, QPropertyAnimation, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QListWidget,
     QListWidgetItem,
+    QProxyStyle,
     QPushButton,
     QSlider,
     QStyle,
@@ -19,10 +20,31 @@ from PySide6.QtWidgets import (
 
 from karaoke.models.lrc import Lyrics
 
+DEFAULT_VOCAL_VOLUME = 30         # %
+DEFAULT_INSTRUMENTAL_VOLUME = 100  # %
+SCROLL_ANIMATION_MS = 350
+
 
 def format_time(seconds: float) -> str:
     seconds = max(0, int(seconds))
     return f"{seconds // 60}:{seconds % 60:02d}"
+
+
+class _JumpToClickStyle(QProxyStyle):
+    """Clique com o botão esquerdo leva a barra direto ao ponto clicado
+    (em vez de avançar um passo) e continua permitindo arrastar."""
+
+    def styleHint(self, hint, option=None, widget=None, returnData=None):
+        if hint == QStyle.StyleHint.SH_Slider_AbsoluteSetButtons:
+            return Qt.MouseButton.LeftButton.value
+        return super().styleHint(hint, option, widget, returnData)
+
+
+class JumpSlider(QSlider):
+    def __init__(self, orientation=Qt.Orientation.Horizontal, parent=None) -> None:
+        super().__init__(orientation, parent)
+        self._jump_style = _JumpToClickStyle()  # mantém a referência viva
+        self.setStyle(self._jump_style)
 
 
 class _VolumeSlider(QWidget):
@@ -30,7 +52,7 @@ class _VolumeSlider(QWidget):
 
     def __init__(self, label: str, value: int = 100, parent=None) -> None:
         super().__init__(parent)
-        self.slider = QSlider(Qt.Orientation.Horizontal)
+        self.slider = JumpSlider(Qt.Orientation.Horizontal)
         self.slider.setRange(0, 100)
         self.slider.setValue(value)
         self.slider.setMinimumWidth(120)
@@ -44,9 +66,104 @@ class _VolumeSlider(QWidget):
         layout.addWidget(self.slider, 1)
         layout.addWidget(self.value_label)
 
+    @property
+    def volume(self) -> float:
+        return self.slider.value() / 100
+
     def _on_changed(self, value: int) -> None:
         self.value_label.setText(f"{value}%")
         self.changed.emit(value / 100)
+
+
+class LyricsView(QListWidget):
+    """Letra com o verso atual sempre no meio da área visível.
+
+    Um espaço vazio de meia altura antes do primeiro e depois do último verso
+    permite centralizar qualquer verso; a rolagem até o próximo é animada, e a
+    letra vai subindo conforme os versos passam.
+    """
+
+    line_clicked = Signal(int)  # índice do verso
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.setWordWrap(True)
+        self.setSpacing(4)
+        self.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._top = self._bottom = None
+        self._centered = 0
+        self._animation = QPropertyAnimation(self.verticalScrollBar(), b"value", self)
+        self._animation.setDuration(SCROLL_ANIMATION_MS)
+        self._animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self.itemClicked.connect(self._on_item_clicked)
+
+    # ------------------------------------------------------------ conteúdo
+    def set_lines(self, texts: list[str]) -> None:
+        self._animation.stop()
+        self.clear()
+        self._top = self._spacer()
+        for text in texts:
+            item = QListWidgetItem(text)
+            item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.addItem(item)
+        self._bottom = self._spacer()
+        self._update_spacers()
+        self._centered = 0
+        self.center_on(0, animate=False)
+
+    def line_count(self) -> int:
+        return max(0, self.count() - 2)
+
+    def line_item(self, index: int) -> QListWidgetItem | None:
+        if 0 <= index < self.line_count():
+            return self.item(index + 1)
+        return None
+
+    # ------------------------------------------------------------ rolagem
+    def center_on(self, index: int, animate: bool = True) -> None:
+        """Rola para deixar o verso ``index`` no meio da área visível."""
+        item = self.line_item(max(index, 0))
+        if item is None:
+            return
+        self._centered = max(index, 0)
+        self.doItemsLayout()  # mede o verso com a fonte atual (destacado é maior)
+        bar = self.verticalScrollBar()
+        rect = self.visualItemRect(item)
+        target = bar.value() + rect.center().y() - self.viewport().height() // 2
+        target = max(bar.minimum(), min(bar.maximum(), target))
+        self._animation.stop()
+        if animate and self.isVisible():
+            self._animation.setStartValue(bar.value())
+            self._animation.setEndValue(target)
+            self._animation.start()
+        else:
+            bar.setValue(target)
+
+    def _spacer(self) -> QListWidgetItem:
+        item = QListWidgetItem()
+        item.setFlags(Qt.ItemFlag.NoItemFlags)
+        self.addItem(item)
+        return item
+
+    def _update_spacers(self) -> None:
+        half = max(0, self.viewport().height() // 2)
+        for item in (self._top, self._bottom):
+            if item is not None:
+                item.setSizeHint(QSize(1, half))
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._update_spacers()
+        self.center_on(self._centered, animate=False)
+
+    def _on_item_clicked(self, item: QListWidgetItem) -> None:
+        row = self.row(item) - 1
+        if 0 <= row < self.line_count():
+            self.line_clicked.emit(row)
 
 
 class PlayerWindow(QWidget):
@@ -80,14 +197,8 @@ class PlayerWindow(QWidget):
         self.lyrics_note.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.lyrics_note.setEnabled(False)  # cinza
 
-        # Letra: um verso por linha, centralizada
-        self.lyrics_view = QListWidget()
-        self.lyrics_view.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
-        self.lyrics_view.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.lyrics_view.setWordWrap(True)
-        self.lyrics_view.setSpacing(4)
-        self.lyrics_view.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
-        self.lyrics_view.itemClicked.connect(self._on_line_clicked)
+        self.lyrics_view = LyricsView()
+        self.lyrics_view.line_clicked.connect(self._on_line_clicked)
 
         # Controles
         self.play_button = QPushButton()
@@ -95,15 +206,15 @@ class PlayerWindow(QWidget):
         self.play_button.clicked.connect(self.toggle_requested)
         self.set_playing(False)
 
-        self.position_slider = QSlider(Qt.Orientation.Horizontal)
+        self.position_slider = JumpSlider(Qt.Orientation.Horizontal)
         self.position_slider.setRange(0, 0)
         self.position_slider.sliderPressed.connect(self._on_slider_pressed)
         self.position_slider.sliderReleased.connect(self._on_slider_released)
         self.time_label = QLabel("0:00 / 0:00")
 
-        self.vocal_volume = _VolumeSlider("Voz")
+        self.vocal_volume = _VolumeSlider("Voz", DEFAULT_VOCAL_VOLUME)
         self.vocal_volume.changed.connect(self.vocal_volume_changed)
-        self.instrumental_volume = _VolumeSlider("Instrumental")
+        self.instrumental_volume = _VolumeSlider("Instrumental", DEFAULT_INSTRUMENTAL_VOLUME)
         self.instrumental_volume.changed.connect(self.instrumental_volume_changed)
 
         transport = QHBoxLayout()
@@ -136,7 +247,6 @@ class PlayerWindow(QWidget):
     def set_lyrics(self, lyrics: Lyrics) -> None:
         self._lyrics = lyrics
         self._current_line = -1
-        self.lyrics_view.clear()
         if not lyrics.lines:
             self.lyrics_note.setText("Sem letra para esta música")
         elif not lyrics.synced:
@@ -144,11 +254,10 @@ class PlayerWindow(QWidget):
         else:
             self.lyrics_note.setText("")
         self.lyrics_note.setVisible(bool(self.lyrics_note.text()))
-        for line in lyrics.lines:
-            item = QListWidgetItem(line.text or "♪")
-            item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            self._style_line(item, current=False)
-            self.lyrics_view.addItem(item)
+        self.lyrics_view.set_lines([line.text or "♪" for line in lyrics.lines])
+        for i in range(self.lyrics_view.line_count()):
+            self._style_line(self.lyrics_view.line_item(i), current=False)
+        self.lyrics_view.center_on(0, animate=False)
 
     def set_loading(self, loading: bool) -> None:
         self.play_button.setEnabled(not loading)
@@ -177,21 +286,24 @@ class PlayerWindow(QWidget):
         self.play_button.setToolTip("Pausar (espaço)" if playing else "Tocar (espaço)")
 
     def highlight_line(self, index: int) -> None:
-        """Destaca o verso atual e o mantém no centro da tela."""
+        """Destaca o verso atual e o leva, com animação, ao meio da tela.
+
+        Antes do primeiro verso, o primeiro fica no meio, ainda sem destaque.
+        """
         if index == self._current_line:
             return
-        previous = self.lyrics_view.item(self._current_line) if self._current_line >= 0 else None
+        previous = self.lyrics_view.line_item(self._current_line)
         if previous is not None:
             self._style_line(previous, current=False)
         self._current_line = index
-        item = self.lyrics_view.item(index) if index >= 0 else None
+        item = self.lyrics_view.line_item(index)
         if item is not None:
             self._style_line(item, current=True)
-            self.lyrics_view.scrollToItem(item, QAbstractItemView.ScrollHint.PositionAtCenter)
-        elif self.lyrics_view.count():
-            self.lyrics_view.scrollToTop()
+        self.lyrics_view.center_on(max(index, 0))
 
-    def _style_line(self, item: QListWidgetItem, current: bool) -> None:
+    def _style_line(self, item: QListWidgetItem | None, current: bool) -> None:
+        if item is None:
+            return
         font = QFont(self.lyrics_view.font())
         font.setPointSize(self.LINE_FONT_SIZE + (6 if current else 0))
         font.setBold(current)
@@ -205,8 +317,8 @@ class PlayerWindow(QWidget):
             item.setForeground(palette.text())
 
     # ------------------------------------------------------------ eventos
-    def _on_line_clicked(self, item: QListWidgetItem) -> None:
-        line = self._lyrics.lines[self.lyrics_view.row(item)]
+    def _on_line_clicked(self, index: int) -> None:
+        line = self._lyrics.lines[index]
         if line.time is not None:
             self.seek_requested.emit(line.time)
 

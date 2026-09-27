@@ -39,6 +39,9 @@ class PlayerController(QObject):
         )
         self.view.vocal_volume_changed.connect(self.player.set_vocal_volume)
         self.view.instrumental_volume_changed.connect(self.player.set_instrumental_volume)
+        # Começa com os volumes que a janela mostra (voz em 30%)
+        self.player.set_vocal_volume(self.view.vocal_volume.volume)
+        self.player.set_instrumental_volume(self.view.instrumental_volume.volume)
         self.view.closed.connect(self.close)
 
         self.player.loaded.connect(self._on_loaded)

@@ -79,11 +79,15 @@ ficam em cinza. A pasta `letras/` não é rastreada pelo git.
 Dê dois cliques (ou Enter) numa música da lista "Processadas" para abrir o
 player:
 
-- **Letra sincronizada** destacada verso a verso, sempre centralizada; clicar
-  num verso pula para ele. Letras sem sincronia aparecem inteiras, sem destaque.
+- **Letra sincronizada** destacada verso a verso: o verso atual fica sempre no
+  meio da tela e a letra vai subindo, com animação, conforme os versos passam;
+  clicar num verso pula para ele. Letras sem sincronia aparecem sem destaque.
 - **Play/pause** (botão ou barra de espaço), barra de posição e setas ← → para
   voltar/avançar 5 s.
-- **Volume da voz e do instrumental separados**, de 0 a 100%.
+- **Volume da voz e do instrumental separados**, de 0 a 100% (a voz começa em
+  30%).
+- Clicar em qualquer ponto de uma barra (posição, voz ou instrumental) leva
+  direto àquele ponto, e dá para arrastar a partir dali.
 
 Os vocais e o instrumental são carregados na memória e misturados pelo próprio
 app antes de ir para a placa de som, então os dois nunca se dessincronizam e a

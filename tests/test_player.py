@@ -157,7 +157,8 @@ def test_player_controller_flow(song):
     ctrl = PlayerController(song, view, player)
     ctrl.start()
     assert player.calls == [("load", "vocais.flac", "instrumental.flac")]
-    assert view.lyrics_view.count() == 5 and not view.play_button.isEnabled()
+    assert view.lyrics_view.line_count() == 5 and not view.play_button.isEnabled()
+    assert player.volumes == {"voz": pytest.approx(0.3), "inst": pytest.approx(1.0)}
 
     player.loaded.emit(60.0)
     assert ("play",) in player.calls and view.play_button.isEnabled()
@@ -165,13 +166,13 @@ def test_player_controller_flow(song):
 
     player.position_changed.emit(11.0)
     assert view._current_line == 1
-    assert view.lyrics_view.item(1).font().bold()
+    assert view.lyrics_view.line_item(1).font().bold()
     assert view.time_label.text() == "0:11 / 1:00"
 
     view.vocal_volume.slider.setValue(30)
     assert player.volumes["voz"] == pytest.approx(0.3)
 
-    view.lyrics_view.itemClicked.emit(view.lyrics_view.item(2))  # clicar no verso
+    view.lyrics_view.itemClicked.emit(view.lyrics_view.line_item(2))  # clicar no verso
     assert player.calls[-1] == ("seek", 15.0)
 
     player.pos = 20.0
@@ -283,3 +284,57 @@ def test_only_latest_load_is_applied(qapp, tmp_path, no_sink):
     _spin(1000)
     assert durations == [pytest.approx(0.25)]
     assert player._frames == 2000
+
+
+# ------------------------------------------------------------- janela
+def _click_at_fraction(slider, fraction):
+    from PySide6.QtCore import QPoint
+    from PySide6.QtTest import QTest
+
+    x = int(slider.width() * fraction)
+    QTest.mouseClick(slider, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, QPoint(x, slider.height() // 2))
+
+
+def test_click_on_bars_jumps_to_clicked_point(qapp):
+    view = PlayerWindow()
+    view.resize(800, 600)
+    view.show()
+    _spin(50)
+    voice = view.vocal_volume.slider
+    assert voice.value() == 30  # padrão
+
+    _click_at_fraction(voice, 0.9)
+    assert voice.value() >= 85  # foi até o clique, não só +10
+    _click_at_fraction(voice, 0.1)
+    assert voice.value() <= 15
+
+    seeks = []
+    view.seek_requested.connect(seeks.append)
+    view.set_duration(200.0)
+    _click_at_fraction(view.position_slider, 0.75)
+    assert seeks and seeks[-1] == pytest.approx(150, abs=8)
+
+
+def test_lyrics_current_line_stays_centered(qapp):
+    view = PlayerWindow()
+    view.resize(700, 600)
+    view.show()
+    lrc = "\n".join(f"[00:{i * 2:02d}.00]Verso {i}" for i in range(25))
+    view.set_lyrics(parse_lrc(lrc))
+    _spin(50)
+    lv = view.lyrics_view
+    middle = lv.viewport().height() / 2
+
+    def center_of(i):
+        return lv.visualItemRect(lv.line_item(i)).center().y()
+
+    assert abs(center_of(0) - middle) < 30  # antes de começar: 1º verso no meio
+    for index in (0, 12, 24):              # início, meio e último verso
+        view.highlight_line(index)
+        _spin(SCROLL_MS + 150)
+        assert abs(center_of(index) - middle) < 30, index
+
+
+from PySide6.QtCore import Qt  # noqa: E402
+
+from karaoke.views.player_window import SCROLL_ANIMATION_MS as SCROLL_MS  # noqa: E402
