@@ -197,3 +197,32 @@ def test_search_dialog_keyboard(qapp):
     assert focused() is dialog.table
     QTest.keyClick(dialog.table, Qt.Key.Key_Return)
     assert accepted == [True]  # Enter no resultado usa a letra
+
+
+def test_windows_build_without_tab_order_warnings(qapp):
+    """setTabOrder só vale para widgets já na mesma janela; senão o Qt avisa
+    "'first' and 'second' must be in the same window" e ignora a ordem."""
+    from PySide6.QtCore import qInstallMessageHandler
+
+    from karaoke.views import LyricsSearchDialog, MainWindow, PlayerWindow
+
+    warnings = []
+    previous = qInstallMessageHandler(lambda mode, ctx, msg: warnings.append(msg))
+    try:
+        MainWindow()
+        PlayerWindow()
+        LyricsSearchDialog("Música")
+    finally:
+        qInstallMessageHandler(previous)
+    assert [w for w in warnings if "setTabOrder" in w] == []
+
+
+def test_search_dialog_tab_order(qapp):
+    from karaoke.views import LyricsSearchDialog
+
+    dialog = LyricsSearchDialog("Música")
+    activate(dialog)
+    dialog.artist_edit.setFocus()
+    for widget in [dialog.track_edit, dialog.search_button, dialog.table, dialog.preview]:
+        tab()
+        assert focused() is widget, widget

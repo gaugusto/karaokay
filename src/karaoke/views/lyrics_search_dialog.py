@@ -137,14 +137,6 @@ class LyricsSearchDialog(QDialog):
         self.buttons.accepted.connect(self._accept_if_usable)
         self.buttons.rejected.connect(self.reject)
 
-        self.preview.setTabChangesFocus(True)
-        for first, second in zip(
-            [self.artist_edit, self.track_edit, self.search_button, self.table, self.preview, self.use_button],
-            [self.track_edit, self.search_button, self.table, self.preview, self.use_button,
-             self.buttons.buttons()[-1]],
-        ):
-            QWidget.setTabOrder(first, second)
-
         layout = QVBoxLayout(self)
         layout.setContentsMargins(22, 20, 22, 18)
         layout.setSpacing(12)
@@ -154,6 +146,13 @@ class LyricsSearchDialog(QDialog):
         layout.addWidget(self.status_label)
         layout.addWidget(splitter, 1)
         layout.addWidget(self.buttons)
+
+        # Ordem do Tab (só depois de todos os widgets estarem na janela)
+        self.preview.setTabChangesFocus(True)
+        chain = [self.artist_edit, self.track_edit, self.search_button, self.table,
+                 self.preview, self.use_button, self.buttons.buttons()[-1]]
+        for first, second in zip(chain, chain[1:]):
+            QWidget.setTabOrder(first, second)
 
     # ------------------------------------------------------------ conteúdo
     def set_opening_player(self, opening: bool) -> None:
