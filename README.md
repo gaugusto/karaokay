@@ -41,7 +41,8 @@ A janela tem duas listas, uma sobre a outra:
 
 - **A processar** (em cima): músicas que ainda precisam ter os vocais separados, na ordem
   de chegada. Elas são processadas por uma fila, uma de cada vez, nunca em
-  paralelo. A que está sendo processada aparece em primeiro, em negrito.
+  paralelo. A que está sendo processada aparece em primeiro, em negrito, com a
+  porcentagem do processamento.
 - **Processadas** (embaixo): músicas já separadas, em ordem alfabética.
 
 Assim que uma música termina de ser processada, ela sai de "A processar" e vai

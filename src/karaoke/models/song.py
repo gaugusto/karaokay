@@ -40,6 +40,7 @@ class Song:
     metadata_path: Path | None = None  # metadados do YouTube salvos no download
     added_at: float = 0.0              # quando o arquivo chegou à pasta (mtime)
     queue_position: int | None = None  # ordem de entrada na fila de processamento
+    progress: int | None = None        # porcentagem do processamento em andamento
     lyrics_state: LyricsState = LyricsState.UNKNOWN
     lyrics_error: str | None = None
 

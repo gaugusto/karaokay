@@ -25,6 +25,7 @@ class FakeDownloader(QObject):
 
 class FakeSeparator(QObject):
     started = Signal(str)
+    progress = Signal(str, int)
     status = Signal(str)
     finished = Signal(str)
     failed = Signal(str, str)
@@ -185,3 +186,24 @@ def test_startup_fetches_lyrics_only_for_processed_without_lyrics(qapp, dirs):
     ctrl.lyrics.finished.emit(str(sem), LyricsState.NOT_FOUND, "")
     ctrl.refresh_library()  # não repete a busca na mesma sessão
     assert len(ctrl.lyrics.jobs) == 1
+
+
+def test_progress_shown_while_processing(qapp, dirs):
+    from karaoke.views.song_delegate import PendingSongDelegate
+    from PySide6.QtWidgets import QStyleOptionViewItem
+
+    music, _ = dirs
+    a = add_song(music, "a.m4a", mtime=10)
+    view, ctrl = make(dirs)
+    ctrl.refresh_library()
+    ctrl.separator.started.emit(str(a))
+    ctrl.separator.progress.emit(str(a), 42)
+    assert ctrl.model.song(a).progress == 42
+
+    delegate = PendingSongDelegate()
+    option = QStyleOptionViewItem()
+    delegate.initStyleOption(option, ctrl.pending.index_of(a))
+    assert option.text == "1.  a   — processando… 42%"
+
+    ctrl.separator.finished.emit(str(a))
+    assert ctrl.model.song(a).progress is None

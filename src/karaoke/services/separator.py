@@ -43,6 +43,49 @@ def decode_to_wav(source: Path, target: Path) -> None:
         raise RuntimeError(f"ffmpeg não conseguiu ler o áudio: {detail[0]}")
 
 
+class _ProgressBar:
+    """Substituto mínimo do tqdm que repassa o progresso (0–1) a um callback.
+
+    O audio-separator usa o tqdm para contar os blocos de áudio processados
+    pelo modelo e os bytes do download do modelo; trocando o tqdm dos módulos
+    dele por esta classe, o app recebe esse progresso sem alterar a biblioteca.
+    """
+
+    def __init__(self, callback, iterable=None, total=None, *args, **kwargs) -> None:
+        self._callback = callback
+        self._iterable = iterable
+        if total is None and iterable is not None and hasattr(iterable, "__len__"):
+            total = len(iterable)
+        self.total = total
+        self.n = 0
+
+    def __iter__(self):
+        for item in self._iterable:
+            yield item
+            self.update(1)
+
+    def update(self, n: int = 1) -> None:
+        self.n += n
+        if self.total:
+            self._callback(min(self.n / self.total, 1.0))
+
+    def close(self) -> None:
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc) -> None:
+        self.close()
+
+    def __getattr__(self, name):  # set_description, refresh, etc.: sem efeito
+        return lambda *args, **kwargs: None
+
+
+def _progress_factory(callback):
+    return lambda *args, **kwargs: _ProgressBar(callback, *args, **kwargs)
+
+
 class SeparationService(QObject):
     """Fila que separa vocais e instrumental, uma música por vez.
 
@@ -53,6 +96,7 @@ class SeparationService(QObject):
     """
 
     started = Signal(str)          # caminho da música
+    progress = Signal(str, int)    # caminho da música, porcentagem (0–100)
     status = Signal(str)           # mensagem para a barra de status
     finished = Signal(str)         # caminho da música
     failed = Signal(str, str)      # caminho da música, mensagem de erro
@@ -62,6 +106,8 @@ class SeparationService(QObject):
         self._models_dir = models_dir
         self._work_dir = work_dir
         self._separator = None
+        self._current: str | None = None
+        self._last_percent = -1
         self._queue: queue.Queue[tuple[str, Path]] = queue.Queue()
         threading.Thread(target=self._loop, name="separacao", daemon=True).start()
 
@@ -80,6 +126,8 @@ class SeparationService(QObject):
         self.status.emit("Carregando o modelo de separação (na primeira vez ele é baixado)…")
         from audio_separator.separator import Separator  # import pesado: só quando precisar
 
+        self._hook_progress()
+
         self._models_dir.mkdir(parents=True, exist_ok=True)
         separator = Separator(
             log_level=logging.WARNING,
@@ -90,8 +138,34 @@ class SeparationService(QObject):
         separator.load_model(model_filename=MODEL_FILENAME)
         self._separator = separator
 
+    def _hook_progress(self) -> None:
+        """Captura o progresso do audio-separator (ver _ProgressBar)."""
+        try:
+            import audio_separator.separator.separator as separator_module
+            from audio_separator.separator.architectures import mdxc_separator
+        except ImportError:
+            return
+        # BS-RoFormer é um modelo MDXC: blocos de áudio processados
+        mdxc_separator.tqdm = _progress_factory(self._on_inference_progress)
+        # Download do modelo na primeira vez
+        separator_module.tqdm = _progress_factory(
+            lambda f: self.status.emit(f"Baixando o modelo de separação: {int(f * 100)}%")
+        )
+
+    # Faixas da porcentagem: decodificação 0–2, modelo 2–97, gravação 97–100
+    def _report(self, percent: int) -> None:
+        if self._current and percent != self._last_percent:
+            self._last_percent = percent
+            self.progress.emit(self._current, percent)
+
+    def _on_inference_progress(self, fraction: float) -> None:
+        self._report(2 + int(fraction * 95))
+
     def _separate(self, song_path: str, target_dir: Path) -> None:
+        self._current = song_path
+        self._last_percent = -1
         self.started.emit(song_path)
+        self._report(0)
         try:
             self._load()
             self.status.emit(f"Separando vocais: {Path(song_path).stem}")
@@ -99,11 +173,13 @@ class SeparationService(QObject):
             self._work_dir.mkdir(parents=True)
             decoded = self._work_dir / "_entrada.wav"
             decode_to_wav(Path(song_path), decoded)
+            self._report(2)
             self._separator.separate(
                 str(decoded),
                 custom_output_names={"Vocals": VOCALS_NAME, "Instrumental": INSTRUMENTAL_NAME},
             )
             decoded.unlink()
+            self._report(97)
             if find_stem(self._work_dir, VOCALS_NAME) is None or find_stem(self._work_dir, INSTRUMENTAL_NAME) is None:
                 produced = ", ".join(p.name for p in self._work_dir.iterdir()) or "nada"
                 raise RuntimeError(f"o modelo não gerou vocais e instrumental (gerou: {produced})")
@@ -113,6 +189,9 @@ class SeparationService(QObject):
             self._work_dir.rename(target_dir)
         except Exception as exc:
             shutil.rmtree(self._work_dir, ignore_errors=True)
+            self._current = None
             self.failed.emit(song_path, str(exc) or exc.__class__.__name__)
             return
+        self._report(100)
+        self._current = None
         self.finished.emit(song_path)

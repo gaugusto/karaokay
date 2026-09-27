@@ -149,6 +149,13 @@ class MusicLibraryModel(QAbstractListModel):
         song.lyrics_error = error
         self._changed(row)
 
+    def set_progress(self, path: str | Path, percent: int | None) -> None:
+        row = self._row_of(Path(path))
+        if row is None or self._songs[row].progress == percent:
+            return
+        self._songs[row].progress = percent
+        self._changed(row)
+
     def set_queue_position(self, path: str | Path, position: int | None) -> None:
         row = self._row_of(Path(path))
         if row is None or self._songs[row].queue_position == position:

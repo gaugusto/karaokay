@@ -34,9 +34,13 @@ class PendingSongDelegate(QStyledItemDelegate):
         self, option: QStyleOptionViewItem, index: QModelIndex | QPersistentModelIndex
     ) -> None:
         super().initStyleOption(option, index)
-        state = index.data(MusicLibraryModel.StateRole)
+        song = index.data(MusicLibraryModel.SongRole)
+        state = song.state if song else None
         prefix = f"{index.row() + 1}.  " if state in (SongState.QUEUED, SongState.SEPARATING) else ""
-        option.text = f"{prefix}{option.text}   — {STATE_LABELS.get(state, '')}"
+        label = STATE_LABELS.get(state, "")
+        if state is SongState.SEPARATING and song.progress is not None:
+            label = f"processando… {song.progress}%"
+        option.text = f"{prefix}{option.text}   — {label}"
         if state is SongState.SEPARATING:
             font = QFont(option.font)
             font.setBold(True)

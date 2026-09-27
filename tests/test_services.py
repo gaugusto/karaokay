@@ -109,3 +109,50 @@ def test_queue_is_fifo_and_never_concurrent(service, tmp_path, qapp):
 
     assert order == ["m1", "m2", "m3", "m4"]
     assert peak[0] == 1
+
+
+def test_progress_bar_replacement_reports_fractions():
+    from karaoke.services.separator import _progress_factory
+
+    seen = []
+    tqdm = _progress_factory(seen.append)
+    assert list(tqdm([10, 20, 30, 40])) == [10, 20, 30, 40]
+    assert seen == [0.25, 0.5, 0.75, 1.0]
+
+    seen.clear()
+    with tqdm(total=200, unit="iB", unit_scale=True) as bar:  # como no download
+        bar.update(50)
+        bar.set_description("ignorado")
+        bar.update(150)
+    assert seen == [0.25, 1.0]
+
+
+def test_separation_reports_percent(service, tmp_path):
+    percents = []
+    service.progress.connect(lambda path, p: percents.append(p))
+    FakeSeparator.fail = False
+    original = FakeSeparator.separate
+
+    def separate_in_chunks(self, path, custom_output_names=None):
+        # o audio-separator chama o tqdm do módulo mdxc para cada bloco
+        for _ in separator_module_mdxc.tqdm(range(4)):
+            pass
+        original(self, path, custom_output_names)
+
+    FakeSeparator.separate = separate_in_chunks
+    try:
+        service._hook_progress = lambda: None
+        separator_module_mdxc.tqdm = __import__(
+            "karaoke.services.separator", fromlist=["_progress_factory"]
+        )._progress_factory(service._on_inference_progress)
+        service._separate("musica.m4a", tmp_path / "separadas" / "musica")
+    finally:
+        FakeSeparator.separate = original
+    assert percents == [0, 2, 25, 49, 73, 97, 100]
+
+
+class _Mdxc:
+    tqdm = None
+
+
+separator_module_mdxc = _Mdxc

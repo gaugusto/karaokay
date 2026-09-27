@@ -52,6 +52,7 @@ class AppController(QObject):
         self.downloader.failed.connect(self._on_download_failed)
 
         self.separator.started.connect(self._on_separation_started)
+        self.separator.progress.connect(self.model.set_progress)
         self.separator.status.connect(self.view.show_message)
         self.separator.finished.connect(self._on_separation_finished)
         self.separator.failed.connect(self._on_separation_failed)
@@ -114,15 +115,18 @@ class AppController(QObject):
         self.separator.enqueue(path, song.stems_dir)
 
     def _on_separation_started(self, path: str) -> None:
+        self.model.set_progress(path, 0)
         self.model.set_state(path, SongState.SEPARATING)
 
     def _on_separation_finished(self, path: str) -> None:
+        self.model.set_progress(path, None)
         self.model.set_queue_position(path, None)
         self.model.set_state(path, SongState.SEPARATED)  # vai para "Processadas"
         self.view.show_message(f"Processada: {Path(path).stem}", 5000)
         self._queue_lyrics(Path(path))
 
     def _on_separation_failed(self, path: str, message: str) -> None:
+        self.model.set_progress(path, None)
         self.model.set_queue_position(path, None)
         self.model.set_state(path, SongState.FAILED, message)
         self.view.show_message(f"Falha ao processar {Path(path).stem}: {message}", 15000)
