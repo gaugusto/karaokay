@@ -139,7 +139,7 @@ class MainWindow(QMainWindow):
         # Cabeçalho
         title = QLabel("Karaokê")
         title.setObjectName("appTitle")
-        subtitle = QLabel("Cole um link do YouTube: o app baixa o áudio, separa a voz e busca a letra.")
+        subtitle = QLabel("Cole um link do YouTube")
         subtitle.setObjectName("appSubtitle")
 
         # Barra de links no topo
