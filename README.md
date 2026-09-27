@@ -37,12 +37,12 @@ o YouTube muda com frequência.
 
 ### Separação de vocais
 
-A janela tem duas listas:
+A janela tem duas listas, uma sobre a outra:
 
-- **A processar**: músicas que ainda precisam ter os vocais separados, na ordem
+- **A processar** (em cima): músicas que ainda precisam ter os vocais separados, na ordem
   de chegada. Elas são processadas por uma fila, uma de cada vez, nunca em
   paralelo. A que está sendo processada aparece em primeiro, em negrito.
-- **Processadas**: músicas já separadas, em ordem alfabética.
+- **Processadas** (embaixo): músicas já separadas, em ordem alfabética.
 
 Assim que uma música termina de ser processada, ela sai de "A processar" e vai
 para "Processadas". A separação usa o BS-RoFormer
