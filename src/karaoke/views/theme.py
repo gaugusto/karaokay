@@ -160,6 +160,12 @@ QPushButton#fontButton {{
     font-weight: 700;
     border-radius: 10px;
 }}
+QPushButton:focus {{
+    border: 2px solid {Colors.ACCENT_HOVER};
+}}
+QPushButton:default:focus, QPushButton#primary:focus {{
+    border: 2px solid #FFFFFF;
+}}
 QPushButton#playButton {{
     background: {Colors.ACCENT};
     border: none;
@@ -173,6 +179,9 @@ QPushButton#playButton:hover {{
 }}
 QPushButton#playButton:pressed {{
     background: {Colors.ACCENT_PRESSED};
+}}
+QPushButton#playButton:focus {{
+    border: 3px solid #FFFFFF;
 }}
 QPushButton#playButton:disabled {{
     background: {Colors.ACCENT_DIM};
@@ -197,6 +206,9 @@ QTableWidget {{
 }}
 QTableWidget::item {{
     padding: 6px;
+}}
+QTableWidget:focus {{
+    border: 1px solid {Colors.ACCENT};
 }}
 QHeaderView::section {{
     background: {Colors.SURFACE_RAISED};
@@ -233,6 +245,10 @@ QSlider::handle:horizontal {{
     height: 16px;
     margin: -5px 0;
     border-radius: 8px;
+}}
+QSlider::handle:horizontal:focus {{
+    background: {Colors.ACCENT_HOVER};
+    border: 2px solid #FFFFFF;
 }}
 QSlider::handle:horizontal:hover {{
     background: {Colors.ACCENT_HOVER};

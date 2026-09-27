@@ -5,6 +5,7 @@ from __future__ import annotations
 from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QWidget,
     QDialog,
     QDialogButtonBox,
     QFormLayout,
@@ -113,6 +114,11 @@ class LyricsSearchDialog(QDialog):
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
         self.table.itemSelectionChanged.connect(self._on_selection)
         self.table.cellDoubleClicked.connect(lambda *_: self._accept_if_usable())
+        self.table.activated.connect(lambda *_: self._accept_if_usable())  # Enter num resultado
+        self.table.setTabKeyNavigation(False)  # Tab sai da tabela, setas andam nela
+        self.artist_edit.setAccessibleName("Artista")
+        self.track_edit.setAccessibleName("Música")
+        self.table.setAccessibleName("Resultados")
 
         self.preview = QPlainTextEdit()
         self.preview.setReadOnly(True)
@@ -130,6 +136,14 @@ class LyricsSearchDialog(QDialog):
         self.use_button.setEnabled(False)
         self.buttons.accepted.connect(self._accept_if_usable)
         self.buttons.rejected.connect(self.reject)
+
+        self.preview.setTabChangesFocus(True)
+        for first, second in zip(
+            [self.artist_edit, self.track_edit, self.search_button, self.table, self.preview, self.use_button],
+            [self.track_edit, self.search_button, self.table, self.preview, self.use_button,
+             self.buttons.buttons()[-1]],
+        ):
+            QWidget.setTabOrder(first, second)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(22, 20, 22, 18)
@@ -231,6 +245,19 @@ class LyricsSearchDialog(QDialog):
     def _accept_if_usable(self) -> None:
         if self.use_button.isEnabled():
             self.accept()
+
+    def keyPressEvent(self, event) -> None:
+        """Enter num campo só busca (não confirma a janela); ↓ vai aos resultados."""
+        focus = self.focusWidget()
+        in_field = focus in (self.artist_edit, self.track_edit)
+        if in_field and event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            event.accept()  # a busca já foi disparada pelo returnPressed do campo
+            return
+        if in_field and event.key() == Qt.Key.Key_Down and self.table.rowCount():
+            self.table.setFocus()
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
     def done(self, result: int) -> None:
         LyricsSearchDialog._last_size = self.size()  # próxima janela abre do mesmo tamanho

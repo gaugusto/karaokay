@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QModelIndex, QPersistentModelIndex, QRectF, QSize, Qt
-from PySide6.QtGui import QFont, QFontMetrics, QPainter, QPainterPath
+from PySide6.QtGui import QFont, QFontMetrics, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QStyle, QStyledItemDelegate, QStyleOptionViewItem
 
 from karaoke.models import LyricsState, MusicLibraryModel, Song, SongState
@@ -92,13 +92,17 @@ class _CardDelegate(QStyledItemDelegate):
         card = QRectF(option.rect).adjusted(2, self.GAP / 2, -2, -self.GAP / 2)
         selected = bool(option.state & QStyle.StateFlag.State_Selected)
         hovered = bool(option.state & QStyle.StateFlag.State_MouseOver)
+        focused = bool(option.state & QStyle.StateFlag.State_HasFocus)
 
         # Fundo do cartão
         path = QPainterPath()
         path.addRoundedRect(card, self.RADIUS, self.RADIUS)
         background = Colors.SURFACE_SELECTED if selected else Colors.SURFACE_HOVER if hovered else Colors.SURFACE
         painter.fillPath(path, color(background))
-        painter.setPen(color(Colors.ACCENT if selected else Colors.BORDER))
+        if focused:  # item atual com a lista em foco (navegação por teclado)
+            painter.setPen(QPen(color(Colors.ACCENT_HOVER), 2))
+        else:
+            painter.setPen(color(Colors.ACCENT if selected else Colors.BORDER))
         painter.drawPath(path)
 
         x = card.left() + 16

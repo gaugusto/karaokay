@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from PySide6.QtCore import QAbstractItemModel, QEvent, QModelIndex, Qt, Signal
+from PySide6.QtGui import QContextMenuEvent, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
@@ -41,7 +42,38 @@ class _SongListView(QListView):
         paths = [index.data(MusicLibraryModel.PathRole) for index in rows]
         return [p for p in paths if p]
 
+    def focusInEvent(self, event) -> None:
+        """Ao chegar pelo Tab, já marca a primeira música (se nenhuma estiver)."""
+        super().focusInEvent(event)
+        model = self.model()
+        if model is not None and not self.currentIndex().isValid() and model.rowCount():
+            self.setCurrentIndex(model.index(0, 0))
+
+    def event(self, event) -> bool:
+        """Tecla de menu / Shift+F10: abre o menu da música atual (e não a do
+        ponto central da lista, que é o que o Qt usaria)."""
+        if (
+            event.type() == QEvent.Type.ContextMenu
+            and event.reason() == QContextMenuEvent.Reason.Keyboard
+            and self.currentIndex().isValid()
+        ):
+            self.customContextMenuRequested.emit(self.visualRect(self.currentIndex()).center())
+            event.accept()
+            return True
+        return super().event(event)
+
     def keyPressEvent(self, event) -> None:
+        menu_key = event.key() == Qt.Key.Key_Menu or (
+            event.key() == Qt.Key.Key_F10 and event.modifiers() == Qt.KeyboardModifier.ShiftModifier
+        )
+        if (
+            menu_key
+            and self.currentIndex().isValid()
+            and self.contextMenuPolicy() == Qt.ContextMenuPolicy.CustomContextMenu
+        ):  # tecla de menu ou Shift+F10 (para teclados sem ela)
+            self.customContextMenuRequested.emit(self.visualRect(self.currentIndex()).center())
+            event.accept()
+            return
         if event.key() == Qt.Key.Key_Delete and self.model() is not None:
             paths = self.selected_paths()
             if paths:
@@ -155,8 +187,21 @@ class MainWindow(QMainWindow):
         self.progress_bar.hide()
         self.statusBar().addPermanentWidget(self.progress_bar)
 
+        # Teclado: Tab alterna barra de link → "A processar" → "Processadas";
+        # Ctrl+L volta para a barra de link
+        QWidget.setTabOrder(self.url_bar, self.pending_panel.view)
+        QWidget.setTabOrder(self.pending_panel.view, self.processed_panel.view)
+        QShortcut(QKeySequence("Ctrl+L"), self, self.focus_url_bar)
+        self.url_bar.setToolTip("Cole um link do YouTube e pressione Enter (Ctrl+L)")
+        self.pending_panel.view.setAccessibleName("Músicas a processar")
+        self.processed_panel.view.setAccessibleName("Músicas processadas")
+
         # Definido pelo controlador: decide se a janela pode fechar
         self.close_guard: Callable[[], bool] | None = None
+
+    def focus_url_bar(self) -> None:
+        self.url_bar.setFocus()
+        self.url_bar.selectAll()
 
     # ------------------------------------------------------------- modelos
     def set_models(self, pending: QAbstractItemModel, processed: QAbstractItemModel) -> None:
