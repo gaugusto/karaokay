@@ -122,6 +122,11 @@ player. Ele abre pronto para tocar, mas só começa quando você der play.
   no instante em que ele começar a ser cantado. A letra inteira é deslocada e o
   ajuste fica salvo no próprio `.lrc` (tag padrão `[offset:ms]`), valendo nas
   próximas vezes. Esc ou "Cancelar" saem sem mudar nada.
+- **Efeito de fundo** ("aurora"): manchas de luz suaves que se movem devagar e
+  brilham um pouco mais quando a música fica mais intensa. É escuro e tem um
+  véu na faixa do meio, onde fica o verso atual, para não atrapalhar a leitura.
+  O botão **✦** liga e desliga (a escolha fica salva). A animação só roda com o
+  player visível.
 - Clicar em qualquer ponto de uma barra (posição, voz ou instrumental) leva
   direto àquele ponto, e dá para arrastar a partir dali.
 
@@ -154,6 +159,7 @@ src/karaoke/
     main_window.py     janela principal
     song_delegate.py   cartões das músicas nas listas
     theme.py           tema escuro (cores, fonte e estilos)
+    background.py      fundo animado do player
     player_window.py   janela do player
     lyrics_search_dialog.py  busca manual de letra
   controllers/   ligam visões, modelos e serviços

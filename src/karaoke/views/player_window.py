@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 
 from karaoke.models.lrc import Lyrics
 from karaoke.views import dialogs
+from karaoke.views.background import AnimatedBackground
 from karaoke.views.theme import Colors, media_icon
 
 DEFAULT_VOCAL_VOLUME = 30         # %
@@ -225,6 +226,17 @@ class PlayerWindow(QWidget):
             button.setFixedSize(46, 40)
             button.setToolTip(tip)
             button.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # espaço continua sendo play/pause
+        # ✦ : liga/desliga o efeito de fundo
+        self.background = AnimatedBackground(self)
+        self.background.lower()
+        self.effect_button = QPushButton("✦")
+        self.effect_button.setObjectName("fontButton")
+        self.effect_button.setCheckable(True)
+        self.effect_button.setFixedSize(46, 40)
+        self.effect_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.effect_button.toggled.connect(self.set_background_effect)
+        self.effect_button.setChecked(self._saved_background_effect())
+        self.set_background_effect(self.effect_button.isChecked())
         self.font_smaller_button.clicked.connect(lambda: self.change_font_size(-LYRICS_FONT_STEP))
         self.font_larger_button.clicked.connect(lambda: self.change_font_size(LYRICS_FONT_STEP))
 
@@ -292,8 +304,9 @@ class PlayerWindow(QWidget):
         layout.setSpacing(12)
         header = QHBoxLayout()
         header.setSpacing(8)
-        header.addSpacing(46 * 2 + 8)  # equilibra os botões para o título ficar centralizado
+        header.addSpacing(46 * 3 + 16)  # equilibra os botões para o título ficar centralizado
         header.addWidget(self.title_label, 1)
+        header.addWidget(self.effect_button)
         header.addWidget(self.font_smaller_button)
         header.addWidget(self.font_larger_button)
         layout.addLayout(header)
@@ -430,6 +443,28 @@ class PlayerWindow(QWidget):
             self._style_line(item, current=True)
         self.lyrics_view.center_on(max(index, 0))
 
+    # ------------------------------------------------------- efeito de fundo
+    def set_background_effect(self, enabled: bool) -> None:
+        self.background.set_effect_enabled(enabled)
+        if self.effect_button.isChecked() != enabled:
+            self.effect_button.setChecked(enabled)
+        self.effect_button.setToolTip(
+            "Desligar o efeito de fundo" if enabled else "Ligar o efeito de fundo"
+        )
+        _settings().setValue("player/background_effect", enabled)
+
+    @staticmethod
+    def _saved_background_effect() -> bool:
+        value = _settings().value("player/background_effect", True)
+        return value not in (False, "false", "0", 0)
+
+    def set_audio_level(self, level: float) -> None:
+        self.background.set_level(level)
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self.background.setGeometry(self.rect())
+
     # ---------------------------------------------------- tamanho da letra
     @property
     def font_size(self) -> int:
@@ -474,7 +509,7 @@ class PlayerWindow(QWidget):
         if current:
             item.setForeground(QColor(Colors.ACCENT_HOVER))
         elif self._lyrics.synced:
-            item.setForeground(QColor(Colors.TEXT_MUTED))
+            item.setForeground(QColor(Colors.LYRICS_DIM))
         else:
             item.setForeground(QColor(Colors.TEXT_SECONDARY))
 
