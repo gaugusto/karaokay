@@ -96,12 +96,14 @@ As letras do LRCLIB costumam estar fora de sincronia com o áudio do YouTube
 botão direito numa música processada e escolha **Letra → Sincronizar
 automaticamente com os vocais**. Usando o arquivo de vocais separados, o app:
 
-1. mede quando há voz cantando (quadros de 20 ms);
-2. encontra o deslocamento (até ±90 s) e o andamento (±4%) que fazem a letra
-   bater com a voz;
-3. puxa cada verso para o recomeço da voz mais próximo (até ±1,2 s);
-4. calcula uma **confiança**; só aplica se ela for suficiente. Senão, avisa e
-   não muda nada (provavelmente a letra é de outra versão da música).
+1. mede os **ataques** da voz (instantes em que o volume sobe de repente, como
+   no começo de cada verso) em quadros de 20 ms;
+2. encontra o deslocamento (até ±90 s) e o andamento (±4%) em que o começo
+   dos versos da letra mais coincide com esses ataques;
+3. ajusta cada verso para o ataque nítido mais próximo (até ±0,3 s);
+4. só aplica se o encaixe for **inequívoco** (pico de correlação destacado e
+   sem outro parecido). Senão, avisa e não muda nada: provavelmente a letra é
+   de outra versão da música. Se a letra já estava no lugar, avisa isso.
 
 A letra original fica guardada (`letras/<nome>.original.lrc`) e pode ser
 recuperada em **Letra → Restaurar letra original**. Se o player estiver aberto
