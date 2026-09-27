@@ -27,7 +27,9 @@ ficam na raiz do projeto.
 
 ## Uso
 
-Cole um link do YouTube na barra do topo e pressione **Enter**. O aplicativo baixa
+Cole um link do YouTube na barra do topo e pressione **Enter**. Valem links
+completos (`youtube.com/watch?v=…`, `music.youtube.com`, Shorts) e o link curto
+do próprio YouTube (`youtu.be/…`), com ou sem `https://`. O aplicativo baixa
 somente o áudio, na melhor qualidade disponível (sem reconversão), para a pasta
 `músicas/` na raiz do projeto. Essa pasta não é rastreada pelo git. Todas as
 músicas dela aparecem na lista da janela, que se atualiza automaticamente.

@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 import karaoke.services.separator as separator_module
-from karaoke.services import SeparationService, is_youtube_url
+from karaoke.services import SeparationService, is_youtube_url, normalize_youtube_url
 
 
 @pytest.mark.parametrize(
@@ -16,12 +16,37 @@ from karaoke.services import SeparationService, is_youtube_url
         ("https://music.youtube.com/watch?v=abc", True),
         ("http://m.youtube.com/watch?v=abc", True),
         ("https://exemplo.com/watch?v=abc", False),
-        ("youtube.com/watch?v=abc", False),
+        ("youtube.com/watch?v=abc", True),        # sem https://
+        ("youtu.be/DRhEueqE7Uw", True),
+        ("youtu.be/DRhEueqE7Uw?si=AbC", True),
+        ("www.youtube.com/watch?v=abc", True),
+        ("  youtu.be/abc  ", True),              # espaços em volta
+        ("bit.ly/3abcXYZ", False),               # encurtador de terceiros
+        ("https://bit.ly/3abcXYZ", False),
+        ("exemplo.com/youtu.be/abc", False),
+        ("ftp://youtu.be/abc", False),
         ("texto qualquer", False),
+        ("youtu.be/abc outra coisa", False),
+        ("", False),
     ],
 )
 def test_is_youtube_url(url, ok):
     assert is_youtube_url(url) is ok
+
+
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        ("youtu.be/DRhEueqE7Uw", "https://youtu.be/DRhEueqE7Uw"),
+        ("www.youtube.com/watch?v=abc", "https://www.youtube.com/watch?v=abc"),
+        ("https://youtu.be/abc", "https://youtu.be/abc"),       # já completo: igual
+        ("http://m.youtube.com/watch?v=abc", "http://m.youtube.com/watch?v=abc"),
+        (" youtu.be/abc ", "https://youtu.be/abc"),
+        ("bit.ly/abc", None),
+    ],
+)
+def test_normalize_youtube_url(text, expected):
+    assert normalize_youtube_url(text) == expected
 
 
 class FakeSeparator:

@@ -1,6 +1,6 @@
 """Serviços: integrações externas (yt-dlp, audio-separator), sem interface."""
 
-from karaoke.services.downloader import DownloadService, is_youtube_url
+from karaoke.services.downloader import DownloadService, is_youtube_url, normalize_youtube_url
 from karaoke.services.files import delete_paths
 from karaoke.services.lyrics import LrclibClient, ManualLyricsSearch
 from karaoke.services.separator import SeparationService
@@ -15,4 +15,5 @@ __all__ = [
     "StemPlayer",
     "delete_paths",
     "is_youtube_url",
+    "normalize_youtube_url",
 ]

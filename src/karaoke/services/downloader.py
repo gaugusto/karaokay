@@ -19,13 +19,30 @@ YOUTUBE_HOSTS = {
 }
 
 
-def is_youtube_url(text: str) -> bool:
-    """Retorna True se o texto parece ser um link do YouTube."""
+def normalize_youtube_url(text: str) -> str | None:
+    """Devolve o link do YouTube pronto para baixar, ou None se não for um.
+
+    Aceita o link com ou sem ``https://`` (ex.: ``youtu.be/ID`` ou
+    ``www.youtube.com/watch?v=ID``); sem esquema, completa com ``https://``.
+    Encurtadores de outros sites não são aceitos.
+    """
+    text = text.strip()
+    if not text or any(c.isspace() for c in text):
+        return None
+    if "://" not in text:
+        text = f"https://{text}"
     try:
-        parsed = urlparse(text.strip())
+        parsed = urlparse(text)
     except ValueError:
-        return False
-    return parsed.scheme in {"http", "https"} and parsed.netloc.lower() in YOUTUBE_HOSTS
+        return None
+    if parsed.scheme not in {"http", "https"} or parsed.netloc.lower() not in YOUTUBE_HOSTS:
+        return None
+    return text
+
+
+def is_youtube_url(text: str) -> bool:
+    """Retorna True se o texto é um link do YouTube (com ou sem https://)."""
+    return normalize_youtube_url(text) is not None
 
 
 class DownloadService(QObject):
