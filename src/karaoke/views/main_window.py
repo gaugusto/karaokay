@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMenu,
     QProgressBar,
+    QStackedWidget,
     QToolTip,
     QVBoxLayout,
     QWidget,
@@ -169,8 +170,8 @@ class MainWindow(QMainWindow):
         splitter.setChildrenCollapsible(False)
         splitter.setSizes([320, 380])
 
-        central = QWidget()
-        layout = QVBoxLayout(central)
+        self.library_page = QWidget()
+        layout = QVBoxLayout(self.library_page)
         layout.setContentsMargins(28, 22, 28, 16)
         layout.setSpacing(14)
         layout.addWidget(title)
@@ -179,7 +180,11 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.url_bar)
         layout.addSpacing(6)
         layout.addWidget(splitter, 1)
-        self.setCentralWidget(central)
+
+        # Páginas: biblioteca (listas) e, quando aberto, o player
+        self.stack = QStackedWidget()
+        self.stack.addWidget(self.library_page)
+        self.setCentralWidget(self.stack)
 
         # Barra de status: progresso do download
         self.progress_bar = QProgressBar()
@@ -202,8 +207,33 @@ class MainWindow(QMainWindow):
         self.close_guard: Callable[[], bool] | None = None
 
     def focus_url_bar(self) -> None:
+        if self.stack.currentWidget() is not self.library_page:
+            return  # com o player aberto, Ctrl+L não faz nada
         self.url_bar.setFocus()
         self.url_bar.selectAll()
+
+    # --------------------------------------------------------------- páginas
+    @property
+    def showing_player(self) -> bool:
+        return self.stack.currentWidget() is not self.library_page
+
+    def show_player(self, player: QWidget, title: str = "") -> None:
+        """O player ocupa a janela principal."""
+        self.stack.addWidget(player)
+        self.stack.setCurrentWidget(player)
+        self.setWindowTitle(f"Karaokê — {title}" if title else "Karaokê")
+
+    def show_library(self, player: QWidget | None = None, select: QModelIndex | None = None) -> None:
+        """Volta para as listas (depois de fechar o player)."""
+        self.stack.setCurrentWidget(self.library_page)
+        if player is not None and self.stack.indexOf(player) >= 0:
+            self.stack.removeWidget(player)
+        self.setWindowTitle("Karaokê")
+        view = self.processed_panel.view
+        if select is not None and select.isValid():
+            view.setCurrentIndex(select)
+            view.scrollTo(select)
+        view.setFocus()
 
     # ------------------------------------------------------------- modelos
     def set_models(self, pending: QAbstractItemModel, processed: QAbstractItemModel) -> None:

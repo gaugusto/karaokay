@@ -52,9 +52,10 @@ class PlayerController(QObject):
         self.player.state_changed.connect(self._on_state)
 
     def start(self) -> None:
-        self.view.show()
-        self.view.raise_()
-        self.view.activateWindow()
+        if self.view.isWindow():  # janela própria; embutido, quem mostra é a janela principal
+            self.view.show()
+            self.view.raise_()
+            self.view.activateWindow()
         vocals, instrumental = self.song.vocals_path, self.song.instrumental_path
         if vocals is None or instrumental is None:
             self._on_load_failed("vocais/instrumental não encontrados")

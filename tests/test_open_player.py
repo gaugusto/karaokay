@@ -13,7 +13,7 @@ def env(qapp, dirs, monkeypatch):
     opened, searches = [], []
 
     class Recorder:
-        def __init__(self, song, parent=None):
+        def __init__(self, song, view=None, parent=None):
             opened.append(song.title)
             self.song = song
             self.closed = type("S", (), {"connect": lambda *a: None})()
