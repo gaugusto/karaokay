@@ -7,12 +7,14 @@ from collections.abc import Callable
 from PySide6.QtCore import QAbstractItemModel, QEvent, QModelIndex, Qt, Signal
 from PySide6.QtGui import QContextMenuEvent, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
+    QHBoxLayout,
     QLabel,
     QLineEdit,
     QListView,
     QMainWindow,
     QMenu,
     QProgressBar,
+    QPushButton,
     QStackedWidget,
     QToolTip,
     QVBoxLayout,
@@ -142,15 +144,24 @@ class MainWindow(QMainWindow):
         # Cabeçalho
         title = QLabel("Karaokê")
         title.setObjectName("appTitle")
-        subtitle = QLabel("Cole um link do YouTube")
+        subtitle = QLabel("Cole um link do YouTube ou pesquise pelo nome da música")
         subtitle.setObjectName("appSubtitle")
 
         # Barra de links no topo
         self.url_bar = QLineEdit()
         self.url_bar.setObjectName("urlBar")
-        self.url_bar.setPlaceholderText("Cole um link do YouTube e pressione Enter")
+        self.url_bar.setPlaceholderText("Link do YouTube ou nome da música")
         self.url_bar.setClearButtonEnabled(True)
         self.url_bar.returnPressed.connect(self._on_return_pressed)
+        self.url_button = QPushButton("Buscar")
+        self.url_button.setObjectName("primary")
+        self.url_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # no teclado, Enter na barra faz o mesmo
+        self.url_button.setMinimumHeight(46)
+        self.url_button.clicked.connect(self._on_return_pressed)
+        url_row = QHBoxLayout()
+        url_row.setSpacing(10)
+        url_row.addWidget(self.url_bar, 1)
+        url_row.addWidget(self.url_button)
 
         # Duas listas: a processar (fila) e processadas
         self.pending_panel = _SongPanel("A processar")
@@ -177,7 +188,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(title)
         layout.addWidget(subtitle)
         layout.addSpacing(4)
-        layout.addWidget(self.url_bar)
+        layout.addLayout(url_row)
         layout.addSpacing(6)
         layout.addWidget(splitter, 1)
 
@@ -199,7 +210,9 @@ class MainWindow(QMainWindow):
         QWidget.setTabOrder(self.url_bar, self.pending_panel.view)
         QWidget.setTabOrder(self.pending_panel.view, self.processed_panel.view)
         QShortcut(QKeySequence("Ctrl+L"), self, self.focus_url_bar)
-        self.url_bar.setToolTip("Cole um link do YouTube e pressione Enter (Ctrl+L)")
+        self.url_bar.setToolTip(
+            "Link do YouTube: baixa a música. Outro texto: pesquisa no YouTube. Enter confirma (Ctrl+L)"
+        )
         self.pending_panel.view.setAccessibleName("Músicas a processar")
         self.processed_panel.view.setAccessibleName("Músicas processadas")
 
@@ -293,12 +306,10 @@ class MainWindow(QMainWindow):
             self.url_submitted.emit(text)
 
     def set_download_running(self, running: bool) -> None:
-        self.url_bar.setEnabled(not running)
+        """A barra continua livre: dá para pesquisar e enfileirar outros downloads."""
         self.progress_bar.setVisible(running)
         if running:
             self.progress_bar.setValue(0)
-        else:
-            self.url_bar.setFocus()
 
     def set_download_progress(self, percent: float) -> None:
         self.progress_bar.setValue(int(percent))

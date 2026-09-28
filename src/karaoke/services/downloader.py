@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import threading
 from pathlib import Path
 from urllib.parse import urlparse
@@ -38,6 +39,17 @@ def normalize_youtube_url(text: str) -> str | None:
     if parsed.scheme not in {"http", "https"} or parsed.netloc.lower() not in YOUTUBE_HOSTS:
         return None
     return text
+
+
+_URL_LIKE = re.compile(r"^(?:[a-z][a-z0-9+.-]*://|www\.|[\w-]+(?:\.[\w-]+)+/)", re.IGNORECASE)
+
+
+def looks_like_url(text: str) -> bool:
+    """True se o texto parece um endereço (``https://…``, ``www.…`` ou
+    ``site.com/…``); senão é tratado como pesquisa. "t.a.t.u" ou "AC/DC" são
+    pesquisas."""
+    text = text.strip()
+    return bool(text) and not any(c.isspace() for c in text) and bool(_URL_LIKE.match(text))
 
 
 def is_youtube_url(text: str) -> bool:

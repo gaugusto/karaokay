@@ -219,6 +219,33 @@ QHeaderView::section {{
     font-weight: 600;
 }}
 
+/* ---- resultados do YouTube ---- */
+QListWidget#results {{
+    background: transparent;
+    border: none;
+}}
+QListWidget#results::item {{
+    background: {Colors.SURFACE};
+    border: 1px solid {Colors.BORDER};
+    border-radius: 12px;
+}}
+QListWidget#results::item:hover {{
+    background: {Colors.SURFACE_HOVER};
+}}
+QListWidget#results::item:selected {{
+    background: {Colors.SURFACE_SELECTED};
+    border: 1px solid {Colors.ACCENT};
+}}
+QLabel#resultTitle {{
+    font-size: 12pt;
+    font-weight: 600;
+    background: transparent;
+}}
+QLabel#thumbnail {{
+    background: {Colors.SURFACE_RAISED};
+    border-radius: 8px;
+}}
+
 /* ---- cartões ---- */
 QFrame#card {{
     background: rgba(26, 29, 36, 225);
