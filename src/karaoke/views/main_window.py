@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from PySide6.QtCore import QAbstractItemModel, QEvent, QItemSelectionModel, QModelIndex, QRect, Qt, QTimer, Signal
-from PySide6.QtGui import QKeySequence, QShortcut
+from PySide6.QtGui import QColor, QIcon, QKeySequence, QPainter, QShortcut
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -22,6 +22,8 @@ from PySide6.QtWidgets import (
 
 from karaoke.views.splitter import GripSplitter
 from karaoke.models import MusicLibraryModel
+from karaoke.views.icons import icon_pixmap
+from karaoke.views.theme import Colors
 from karaoke.views.settings import settings
 from karaoke.views.song_delegate import PendingSongDelegate, ProcessedSongDelegate, RowAction, song_tooltip
 
@@ -42,6 +44,23 @@ class _SongListView(QListView):
         self.setVerticalScrollMode(QListView.ScrollMode.ScrollPerPixel)
         # Ctrl/Shift + clique selecionam várias músicas para excluir de uma vez
         self.setSelectionMode(QListView.SelectionMode.ExtendedSelection)
+
+    def empty_message(self) -> str:
+        model = self.model()
+        if model is None or model.rowCount() or not getattr(model, "filtering", False):
+            return ""
+        return f"Nenhuma música com “{model.text_filter.strip()}”"
+
+    def paintEvent(self, event) -> None:
+        super().paintEvent(event)
+        message = self.empty_message()
+        if message:  # filtro sem resultados: diz isso em vez de uma lista vazia
+            painter = QPainter(self.viewport())
+            painter.setPen(QColor(Colors.TEXT_MUTED))
+            painter.drawText(self.viewport().rect().adjusted(16, 16, -16, -16),
+                             Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop | Qt.TextFlag.TextWordWrap,
+                             message)
+            painter.end()
 
     def selected_paths(self) -> list[str]:
         rows = sorted(self.selectionModel().selectedRows(), key=lambda i: i.row())
@@ -181,21 +200,86 @@ class _SongListView(QListView):
         return super().viewportEvent(event)
 
 
-class _SongPanel(QWidget):
-    """Título com contagem + lista de músicas."""
+class FilterEdit(QLineEdit):
+    """Campo de filtro: ao receber o foco seleciona o texto (para digitar por
+    cima); Esc limpa; ↓ ou Enter vão para a lista."""
 
-    def __init__(self, title: str, parent=None) -> None:
+    to_list = Signal()
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setObjectName("filterBar")
+        self.setClearButtonEnabled(True)
+        self.addAction(QIcon(icon_pixmap("search", Colors.TEXT_MUTED, 16, 2.0)),
+                       QLineEdit.ActionPosition.LeadingPosition)
+
+    def focusInEvent(self, event) -> None:
+        super().focusInEvent(event)
+        if self.text():
+            # depois do clique (que posicionaria o cursor e desfaria a seleção)
+            QTimer.singleShot(0, self.selectAll)
+
+    def keyPressEvent(self, event) -> None:
+        key = event.key()
+        if key == Qt.Key.Key_Escape and self.text():
+            self.clear()
+            event.accept()
+            return
+        if key in (Qt.Key.Key_Down, Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            self.to_list.emit()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+
+class _SongPanel(QWidget):
+    """Título com contagem (+ filtro opcional) e a lista de músicas."""
+
+    def __init__(self, title: str, with_filter: bool = False, parent=None) -> None:
         super().__init__(parent)
         self._title = title
         self.header = QLabel()
         self.header.setObjectName("sectionHeader")
         self.view = _SongListView()
+        self.filter_edit: FilterEdit | None = None
+
+        header_row = QHBoxLayout()
+        header_row.setContentsMargins(0, 0, 0, 0)
+        header_row.setSpacing(12)
+        header_row.addWidget(self.header)
+        header_row.addStretch(1)
+        if with_filter:
+            self.filter_edit = FilterEdit()
+            self.filter_edit.setPlaceholderText(f"Filtrar {title.lower()}")
+            self.filter_edit.setAccessibleName(f"Filtrar músicas {title.lower()}")
+            self.filter_edit.setToolTip("Mostra só as músicas com estas palavras no nome (Ctrl+F; Esc limpa)")
+            self.filter_edit.setFixedWidth(320)
+            self.filter_edit.textChanged.connect(self._on_filter_changed)
+            self.filter_edit.to_list.connect(self._focus_list)
+            header_row.addWidget(self.filter_edit)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(6)
-        layout.addWidget(self.header)
+        layout.addLayout(header_row)
         layout.addWidget(self.view, 1)
+
+    def _on_filter_changed(self, text: str) -> None:
+        model = self.view.model()
+        if hasattr(model, "set_text_filter"):
+            model.set_text_filter(text)
+        self._update_header()
+        self.view.viewport().update()
+        if model is not None and not self.view.currentIndex().isValid() and model.rowCount():
+            self.view.setCurrentIndex(model.index(0, 0))  # Enter/↓ já caem na 1ª encontrada
+
+    def _focus_list(self) -> None:
+        self.view.setFocus()
+        model = self.view.model()
+        if model is not None and model.rowCount():
+            if not self.view.currentIndex().isValid():
+                self.view.setCurrentIndex(model.index(0, 0))
+            self.view.scrollTo(self.view.currentIndex())
 
     def set_model(self, model: QAbstractItemModel) -> None:
         self.view.setModel(model)
@@ -206,7 +290,10 @@ class _SongPanel(QWidget):
     def _update_header(self, *_args) -> None:
         model = self.view.model()
         n = model.rowCount() if model else 0
-        self.header.setText(f"{self._title} ({n})")
+        if getattr(model, "filtering", False):
+            self.header.setText(f"{self._title} ({n} de {model.total_count()})")
+        else:
+            self.header.setText(f"{self._title} ({n})")
         self.view.viewport().update()  # renumera a posição na fila
 
     def select(self, index: QModelIndex) -> None:
@@ -251,7 +338,8 @@ class MainWindow(QMainWindow):
         # Duas listas: a processar (fila) e processadas
         self.pending_panel = _SongPanel("A processar")
         self.pending_panel.view.setItemDelegate(PendingSongDelegate(self.pending_panel.view))
-        self.processed_panel = _SongPanel("Processadas")
+        self.processed_panel = _SongPanel("Processadas", with_filter=True)
+        self.filter_edit = self.processed_panel.filter_edit
         self.processed_panel.view.setItemDelegate(ProcessedSongDelegate(self.processed_panel.view))
         self.processed_panel.view.doubleClicked.connect(self._on_processed_activated)
         self.processed_panel.view.activated.connect(self._on_processed_activated)  # Enter
@@ -300,8 +388,10 @@ class MainWindow(QMainWindow):
         # Teclado: Tab alterna barra de link → "A processar" → "Processadas";
         # Ctrl+L volta para a barra de link
         QWidget.setTabOrder(self.url_bar, self.pending_panel.view)
-        QWidget.setTabOrder(self.pending_panel.view, self.processed_panel.view)
+        QWidget.setTabOrder(self.pending_panel.view, self.filter_edit)
+        QWidget.setTabOrder(self.filter_edit, self.processed_panel.view)
         QShortcut(QKeySequence("Ctrl+L"), self, self.focus_url_bar)
+        QShortcut(QKeySequence.StandardKey.Find, self, self.focus_filter)  # Ctrl+F
         self.url_bar.setToolTip(
             "Link do YouTube: baixa a música. Outro texto: pesquisa no YouTube. Enter confirma (Ctrl+L)"
         )
@@ -339,6 +429,11 @@ class MainWindow(QMainWindow):
         if not self._splitter_restored:  # só agora as listas têm a altura de verdade
             self._splitter_restored = True
             self.restore_splitter_position()
+
+    def focus_filter(self) -> None:
+        if self.showing_page:
+            return  # só com as listas na tela
+        self.filter_edit.setFocus(Qt.FocusReason.ShortcutFocusReason)
 
     def focus_url_bar(self) -> None:
         if self.stack.currentWidget() is not self.library_page:
