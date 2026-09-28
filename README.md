@@ -1,4 +1,4 @@
-# Karaokê
+# Karaokay
 
 Aplicativo de karaokê para desktop, escrito em Python com interface em PySide6 (Qt 6).
 
