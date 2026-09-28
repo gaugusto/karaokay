@@ -15,13 +15,13 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPlainTextEdit,
     QPushButton,
-    QSplitter,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
 )
 
 from karaoke.models import LyricsState
+from karaoke.views.splitter import GripSplitter
 
 KIND_LABELS = {
     LyricsState.SYNCED: "Sincronizada",
@@ -124,7 +124,7 @@ class LyricsSearchDialog(QDialog):
         self.preview.setReadOnly(True)
         self.preview.setPlaceholderText("Selecione um resultado para ver a letra")
 
-        splitter = QSplitter(Qt.Orientation.Vertical)
+        splitter = GripSplitter(Qt.Orientation.Vertical)
         splitter.addWidget(self.table)
         splitter.addWidget(self.preview)
         splitter.setSizes([260, 200])

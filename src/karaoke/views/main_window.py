@@ -13,12 +13,12 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMenu,
     QProgressBar,
-    QSplitter,
     QToolTip,
     QVBoxLayout,
     QWidget,
 )
 
+from karaoke.views.splitter import GripSplitter
 from karaoke.models import LyricsState, MusicLibraryModel
 from karaoke.views.song_delegate import PendingSongDelegate, ProcessedSongDelegate, song_tooltip
 
@@ -163,7 +163,7 @@ class MainWindow(QMainWindow):
         self.pending_panel.view.delete_pressed.connect(self.delete_requested)
         self.processed_panel.view.delete_pressed.connect(self.delete_requested)
 
-        splitter = QSplitter(Qt.Orientation.Vertical)  # a processar em cima, processadas embaixo
+        splitter = GripSplitter(Qt.Orientation.Vertical)  # a processar em cima, processadas embaixo
         splitter.addWidget(self.pending_panel)
         splitter.addWidget(self.processed_panel)
         splitter.setChildrenCollapsible(False)

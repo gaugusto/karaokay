@@ -280,10 +280,7 @@ QStatusBar::item {{
     border: none;
 }}
 QSplitter::handle {{
-    background: transparent;
-}}
-QSplitter::handle:vertical {{
-    height: 14px;
+    background: transparent;  /* a alça é desenhada por views/splitter.py */
 }}
 QScrollBar:vertical {{
     background: transparent;
