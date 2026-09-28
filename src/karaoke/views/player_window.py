@@ -209,6 +209,7 @@ class PlayerWindow(QWidget):
         self._sync_mode = False
         self._sync_line = -1
         self._shown_once = False
+        self._host_window = None
         self._font_size = self._saved_font_size()
         self._note_timer = QTimer(self)
         self._note_timer.setSingleShot(True)
@@ -239,6 +240,14 @@ class PlayerWindow(QWidget):
         self.effect_button.setCheckable(True)
         self.effect_button.setFixedSize(46, 40)
         self.effect_button.toggled.connect(self.set_background_effect)
+
+        # ✕ : fecha o player (Esc / Ctrl+W); na janela principal, volta às listas
+        self.close_button = QPushButton("✕")
+        self.close_button.setObjectName("fontButton")
+        self.close_button.setFixedSize(46, 40)
+        self.close_button.setToolTip("Fechar o player (Esc)")
+        self.close_button.setAccessibleName("Fechar o player")
+        self.close_button.clicked.connect(self.request_close)
 
         # ⛶ : tela cheia (F11; Esc sai)
         self._was_maximized = False
@@ -321,7 +330,8 @@ class PlayerWindow(QWidget):
         layout.setSpacing(12)
         header = QHBoxLayout()
         header.setSpacing(8)
-        header.addSpacing(46 * 4 + 24)  # equilibra os botões para o título ficar centralizado
+        header.addWidget(self.close_button)
+        header.addSpacing(46 * 3 + 16)  # equilibra os botões para o título ficar centralizado
         header.addWidget(self.title_label, 1)
         header.addWidget(self.fullscreen_button)
         header.addWidget(self.effect_button)
@@ -335,7 +345,7 @@ class PlayerWindow(QWidget):
         # Atalhos: espaço = play/pause, setas = voltar/avançar 5 s
         # Espaço e setas ficam em keyPressEvent: assim um botão ou slider com
         # foco usa a tecla primeiro, e só o que sobrar vira play/pause e ±5 s.
-        QShortcut(QKeySequence(QKeySequence.StandardKey.Close), self, self.close)  # Ctrl+W
+        QShortcut(QKeySequence.StandardKey.Close, self, self.request_close)  # Ctrl+W e Ctrl+F4
         QShortcut(QKeySequence(Qt.Key.Key_Escape), self, self._on_escape)
         QShortcut(QKeySequence(Qt.Key.Key_F11), self, self.toggle_fullscreen)
         for keys, step in (("Ctrl++", LYRICS_FONT_STEP), ("Ctrl+=", LYRICS_FONT_STEP), ("Ctrl+-", -LYRICS_FONT_STEP)):
@@ -469,7 +479,11 @@ class PlayerWindow(QWidget):
 
     # ------------------------------------------------------------ teclado
     def eventFilter(self, obj, event) -> bool:
-        """Nos botões, ← → voltam/avançam 5 s (o Qt usaria para mover o foco)."""
+        """Nos botões, ← → voltam/avançam 5 s (o Qt usaria para mover o foco).
+        Na janela principal (player embutido), acompanha a tela cheia."""
+        if obj is self._host_window and event.type() == QEvent.Type.WindowStateChange:
+            self._update_fullscreen_button()
+            return False
         if (
             event.type() == QEvent.Type.KeyPress
             and isinstance(obj, QAbstractButton)
@@ -491,6 +505,7 @@ class PlayerWindow(QWidget):
             self.effect_button,
             self.font_smaller_button,
             self.font_larger_button,
+            self.close_button,
         ]
         for first, second in zip(order, order[1:]):
             QWidget.setTabOrder(first, second)
@@ -500,6 +515,11 @@ class PlayerWindow(QWidget):
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
+        window = self.window()
+        if window is not self and window is not self._host_window:
+            self._host_window = window  # embutido: observa a janela principal
+            window.installEventFilter(self)
+        self._update_fullscreen_button()
         if not self._shown_once:
             self._shown_once = True
             self.play_button.setFocus()  # Espaço já toca/pausa ao abrir
@@ -546,7 +566,7 @@ class PlayerWindow(QWidget):
     # ------------------------------------------------------------ tela cheia
     @property
     def is_fullscreen(self) -> bool:
-        return bool(self.windowState() & Qt.WindowState.WindowFullScreen)
+        return bool(self.window().windowState() & Qt.WindowState.WindowFullScreen)
 
     def toggle_fullscreen(self) -> None:
         self.set_fullscreen(not self.is_fullscreen)
@@ -556,13 +576,14 @@ class PlayerWindow(QWidget):
         if fullscreen == self.is_fullscreen:
             self._update_fullscreen_button()
             return
+        window = self.window()  # o próprio player ou a janela principal que o contém
         if fullscreen:
-            self._was_maximized = self.isMaximized()
-            self.showFullScreen()
+            self._was_maximized = window.isMaximized()
+            window.showFullScreen()
         elif self._was_maximized:
-            self.showMaximized()
+            window.showMaximized()
         else:
-            self.showNormal()
+            window.showNormal()
         self._update_fullscreen_button()
 
     def _update_fullscreen_button(self) -> None:
@@ -576,11 +597,13 @@ class PlayerWindow(QWidget):
             self._update_fullscreen_button()  # também quando o sistema muda o estado
 
     def _on_escape(self) -> None:
-        """Esc: primeiro cancela a sincronização; senão, sai da tela cheia."""
+        """Esc: cancela a sincronização; senão sai da tela cheia; senão fecha o player."""
         if self._sync_mode:
             self.sync_button.setChecked(False)
         elif self.is_fullscreen:
             self.set_fullscreen(False)
+        else:
+            self.request_close()
 
     # ------------------------------------------------------- efeito de fundo
     def set_background_effect(self, enabled: bool) -> None:
@@ -668,6 +691,15 @@ class PlayerWindow(QWidget):
         self._slider_held = False
         self.seek_requested.emit(self.position_slider.value() / 1000)
 
+    @property
+    def embedded(self) -> bool:
+        """True quando o player ocupa a janela principal (não é janela própria)."""
+        return not self.isWindow()
+
+    def request_close(self) -> bool:
+        """✕ / Esc / Ctrl+W: fecha (pedindo confirmação se estiver tocando)."""
+        return self.close()
+
     def close_without_asking(self) -> None:
         """Fecha sem confirmação (quem chamou já confirmou ou decidiu)."""
         self._ask_before_closing = False
@@ -680,5 +712,10 @@ class PlayerWindow(QWidget):
             event.ignore()
             return
         self._ask_before_closing = False
+        if self.embedded and self.is_fullscreen:
+            self.set_fullscreen(False)  # a janela principal volta ao tamanho de antes
+        if self._host_window is not None:
+            self._host_window.removeEventFilter(self)
+            self._host_window = None
         self.closed.emit()
         super().closeEvent(event)

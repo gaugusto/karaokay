@@ -27,7 +27,7 @@ from karaoke.services import (
 from karaoke.services.auto_sync import MIN_CONFIDENCE as MIN_SYNC_CONFIDENCE
 from karaoke.controllers.lyrics_search_controller import LyricsSearchController
 from karaoke.controllers.player_controller import PlayerController
-from karaoke.views import MainWindow, dialogs
+from karaoke.views import MainWindow, PlayerWindow, dialogs
 
 
 def _br(value: float) -> str:
@@ -110,9 +110,12 @@ class AppController(QObject):
         self._start_player(song)
 
     def _start_player(self, song) -> None:
+        """O player ocupa a janela principal; ao fechar, as listas voltam."""
         if self.player is not None:
             self.player.close()  # um player por vez
-        self.player = PlayerController(song, parent=self)
+        view = PlayerWindow()
+        self.view.show_player(view, song.title)
+        self.player = PlayerController(song, view, parent=self)
         self.player.closed.connect(self._on_player_closed)
         self.player.start()
 
@@ -174,6 +177,8 @@ class AppController(QObject):
 
     def _on_player_closed(self) -> None:
         sender = self.sender()
+        if sender is not None:
+            self.view.show_library(sender.view, self.processed.index_of(sender.song.path))
         if sender is self.player:
             self.player = None
         if sender is not None:

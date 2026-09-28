@@ -199,7 +199,7 @@ def test_double_click_opens_player_only_for_processed(qapp, dirs, monkeypatch):
     opened = []
 
     class Recorder:
-        def __init__(self, song, parent=None):
+        def __init__(self, song, view=None, parent=None):
             opened.append(song.title)
             self.closed = type("S", (), {"connect": lambda *a: None})()
 
@@ -405,7 +405,7 @@ def test_main_window_closes_player_and_asks_if_playing(qapp, dirs, answers, monk
     player.state = PlayerState.PAUSED
     monkeypatch.setattr(
         "karaoke.controllers.app_controller.PlayerController",
-        lambda song, parent=None: PlayerController(song, PlayerWindow(), player, parent),
+        lambda song, view=None, parent=None: PlayerController(song, view or PlayerWindow(), player, parent),
     )
     app_ctrl.open_player(str(music / "a.m4a"))
     player_view = app_ctrl.player.view

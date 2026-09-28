@@ -128,7 +128,10 @@ maximizada, e abre do mesmo tamanho da última vez.
 ### Player
 
 Dê dois cliques (ou Enter) numa música da lista "Processadas" para abrir o
-player. Ele abre pronto para tocar, mas só começa quando você der play.
+player. Ele ocupa a própria janela principal (no lugar das listas) e abre pronto
+para tocar, mas só começa quando você der play. Para fechar, use o botão **✕**
+no canto superior esquerdo, Esc ou Ctrl+W: as listas "A processar" e
+"Processadas" voltam, com a música que estava tocando selecionada.
 
 - **Letra sincronizada** destacada verso a verso: o verso atual fica sempre no
   meio da tela e a letra vai subindo, com animação, conforme os versos passam;
@@ -146,8 +149,9 @@ player. Ele abre pronto para tocar, mas só começa quando você der play.
   ajuste fica salvo no próprio `.lrc` (tag padrão `[offset:ms]`), valendo nas
   próximas vezes. Esc ou "Cancelar" saem sem mudar nada.
 - **Tela cheia**: botão **⛶**, ou F11; Esc sai (se estiver sincronizando, o
-  primeiro Esc só cancela a sincronização). Ao sair, a janela volta ao tamanho
-  que tinha.
+  primeiro Esc só cancela a sincronização; o Esc seguinte fecha o player). Ao
+  sair — ou ao fechar o player em tela cheia — a janela volta ao tamanho que
+  tinha.
 - **Efeito de fundo** ("aurora"): manchas de luz suaves que se movem devagar e
   brilham um pouco mais quando a música fica mais intensa. É escuro e tem um
   véu na faixa do meio, onde fica o verso atual, para não atrapalhar a leitura.
@@ -156,9 +160,9 @@ player. Ele abre pronto para tocar, mas só começa quando você der play.
 - Clicar em qualquer ponto de uma barra (posição, voz ou instrumental) leva
   direto àquele ponto, e dá para arrastar a partir dali.
 
-Fechar a janela principal fecha também o player. Se houver música tocando, o
-app pede confirmação, tanto ao fechar a janela principal quanto ao fechar o
-player.
+Se houver música tocando, o app pede confirmação antes de fechar o player
+(✕, Esc ou Ctrl+W) e antes de fechar a janela principal. Abrir outra música
+substitui a que estava no player.
 
 Os vocais e o instrumental são carregados na memória e misturados pelo próprio
 app antes de ir para a placa de som, então os dois nunca se dessincronizam e a
@@ -174,7 +178,7 @@ Tudo pode ser usado sem mouse; o elemento com foco fica destacado em violeta.
 | Tecla | Ação |
 |---|---|
 | Tab / Shift+Tab | barra de link → "A processar" → "Processadas" |
-| Ctrl+L | vai para a barra de link |
+| Ctrl+L | vai para a barra de link (com as listas visíveis) |
 | Enter (na barra) | baixa o link |
 | ↑ ↓ | escolhe a música na lista |
 | Enter (em "Processadas") | abre no player |
@@ -185,7 +189,7 @@ Tudo pode ser usado sem mouse; o elemento com foco fica destacado em violeta.
 
 | Tecla | Ação |
 |---|---|
-| Tab / Shift+Tab | play → posição → Sincronizar → voz → instrumental → ⛶ → ✦ → A− → A+ |
+| Tab / Shift+Tab | play → posição → Sincronizar → voz → instrumental → ⛶ → ✦ → A− → A+ → ✕ |
 | Espaço | play/pause (num botão com foco, aciona o botão) |
 | ← → | volta/avança 5 s (num slider com foco, mexe nele) |
 | Enter | aciona o botão com foco |
@@ -194,8 +198,8 @@ Tudo pode ser usado sem mouse; o elemento com foco fica destacado em violeta.
 | Ctrl + / Ctrl − / Ctrl 0 | tamanho da letra |
 | F11 | tela cheia; Esc sai |
 | M | na sincronização, marca o primeiro verso (em vez de clicar) |
-| Esc | cancela a sincronização / sai da tela cheia |
-| Ctrl+W | fecha o player |
+| Esc | cancela a sincronização; senão sai da tela cheia; senão fecha o player |
+| Ctrl+W | fecha o player e volta às listas |
 
 **Busca de letra**
 
@@ -229,7 +233,7 @@ src/karaoke/
     theme.py           tema escuro (cores, fonte e estilos)
     background.py      fundo animado do player
     splitter.py        divisória arrastável com alça visível
-    player_window.py   janela do player
+    player_window.py   player (ocupa a janela principal)
     lyrics_search_dialog.py  busca manual de letra
   controllers/   ligam visões, modelos e serviços
     app_controller.py  download, fila de processamento, exclusão e letras

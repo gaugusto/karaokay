@@ -136,7 +136,7 @@ def test_delete_closes_player_of_that_song(qapp, dirs, answers, monkeypatch):
     view, ctrl = make_app(dirs)
     monkeypatch.setattr(
         "karaoke.controllers.app_controller.PlayerController",
-        lambda song, parent=None: PlayerController(song, PlayerWindow(), FakePlayer(), parent),
+        lambda song, view=None, parent=None: PlayerController(song, view or PlayerWindow(), FakePlayer(), parent),
     )
     ctrl.open_player(str(music / "a.webm"))
     player_view = ctrl.player.view
