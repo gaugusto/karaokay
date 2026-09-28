@@ -310,11 +310,11 @@ class MainWindow(QMainWindow):
 
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("Karaokê")
+        self.setWindowTitle("Karaokay")
         self.resize(1100, 760)
 
         # Cabeçalho
-        title = QLabel("Karaokê")
+        title = QLabel("Karaokay")
         title.setObjectName("appTitle")
         subtitle = QLabel("Cole um link do YouTube ou pesquise pelo nome da música")
         subtitle.setObjectName("appSubtitle")
@@ -450,7 +450,7 @@ class MainWindow(QMainWindow):
         """Uma página (player, busca de letra) ocupa a janela principal."""
         self.stack.addWidget(page)
         self.stack.setCurrentWidget(page)
-        self.setWindowTitle(f"Karaokê — {title}" if title else "Karaokê")
+        self.setWindowTitle(f"Karaokay — {title}" if title else "Karaokay")
 
     def show_library(self, page: QWidget | None = None, select: QModelIndex | None = None) -> None:
         """Tira a página fechada e volta para as listas, com ``select`` selecionada."""
@@ -460,7 +460,7 @@ class MainWindow(QMainWindow):
             if not was_current:
                 return  # outra página continua na tela
         self.stack.setCurrentWidget(self.library_page)
-        self.setWindowTitle("Karaokê")
+        self.setWindowTitle("Karaokay")
         view = self.processed_panel.view
         if select is not None and select.isValid():
             view.setCurrentIndex(select)

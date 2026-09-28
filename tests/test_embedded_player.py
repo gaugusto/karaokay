@@ -65,7 +65,7 @@ def test_closing_player_returns_to_lists(app, how):
     assert ctrl.player is None and ("stop",) in player.calls
     assert not view.showing_page
     assert view.stack.count() == 1  # só a biblioteca
-    assert view.windowTitle() == "Karaokê"
+    assert view.windowTitle() == "Karaokay"
     # a música que estava tocando fica selecionada na lista de processadas
     current = view.processed_panel.view.currentIndex()
     assert current.isValid() and current.row() == ctrl.processed.index_of(music / "b.m4a").row()

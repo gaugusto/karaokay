@@ -12,7 +12,7 @@ from karaoke.views.theme import apply_theme
 
 def main() -> int:
     app = QApplication(sys.argv)
-    app.setApplicationName("Karaokê")
+    app.setApplicationName("Karaokay")
     apply_theme(app)
     gc_guard.install(app)  # evita que threads de fundo apaguem objetos do Qt
     window = MainWindow()
