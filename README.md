@@ -83,6 +83,11 @@ A janela tem duas listas, uma sobre a outra:
   porcentagem do processamento.
 - **Processadas** (embaixo): músicas já separadas, em ordem alfabética.
 
+Arraste a divisória entre as duas para mudar o tamanho de cada lista. A
+posição fica salva (em `~/.config/karaokay/karaoke.ini`) e é restaurada na
+próxima vez que o app abrir, na mesma proporção mesmo se a janela tiver outro
+tamanho.
+
 Assim que uma música termina de ser processada, ela sai de "A processar" e vai
 para "Processadas". A separação usa o BS-RoFormer
 (`model_bs_roformer_ep_317_sdr_12.9755.ckpt`), via
@@ -252,6 +257,7 @@ src/karaoke/
     theme.py           tema escuro (cores, fonte e estilos)
     background.py      fundo animado do player
     splitter.py        divisória arrastável com alça visível
+    settings.py        preferências salvas entre execuções (QSettings)
     player_window.py   player (ocupa a janela principal)
     lyrics_search_page.py    busca manual de letra (página da janela principal)
     youtube_results_page.py  resultados da pesquisa no YouTube (página)
