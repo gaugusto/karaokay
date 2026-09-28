@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import unicodedata
 from collections.abc import Callable
 from typing import Any
 
@@ -12,6 +13,12 @@ from karaoke.models.library_model import MusicLibraryModel
 from karaoke.models.song import Song, SongState
 
 _Index = QModelIndex | QPersistentModelIndex
+
+
+def normalize(text: str) -> str:
+    """Minúsculas e sem acentos: "Evidências" e "evidencias" se encontram."""
+    decomposed = unicodedata.normalize("NFKD", text.casefold())
+    return "".join(c for c in decomposed if not unicodedata.combining(c))
 
 
 class SongListModel(QSortFilterProxyModel):
@@ -31,6 +38,8 @@ class SongListModel(QSortFilterProxyModel):
         super().__init__(parent)
         self._accept = accept
         self._sort_key = sort_key
+        self._text_filter = ""
+        self._terms: list[str] = []
         self.setDynamicSortFilter(True)
         self.setSourceModel(source)
         self.sort(0)
@@ -44,9 +53,49 @@ class SongListModel(QSortFilterProxyModel):
     def index_of(self, path) -> QModelIndex:
         return self.mapFromSource(self.sourceModel().index_of(path))
 
+    # ------------------------------------------------------------ filtro
+    @property
+    def text_filter(self) -> str:
+        return self._text_filter
+
+    def set_text_filter(self, text: str) -> None:
+        """Mostra só as músicas cujo nome tem todas as palavras de ``text``
+        (em qualquer ordem, sem diferenciar maiúsculas nem acentos)."""
+        if text == self._text_filter:
+            return
+        if hasattr(self, "beginFilterChange"):  # Qt 6.9+
+            self.beginFilterChange()
+            self._text_filter = text
+            self._terms = normalize(text).split()
+            self.endFilterChange(QSortFilterProxyModel.Direction.Rows)
+        else:
+            self._text_filter = text
+            self._terms = normalize(text).split()
+            self.invalidateRowsFilter()
+
+    @property
+    def filtering(self) -> bool:
+        return bool(self._terms)
+
+    def total_count(self) -> int:
+        """Quantas músicas a lista teria sem o filtro de texto."""
+        source = self.sourceModel()
+        return sum(
+            1
+            for row in range(source.rowCount())
+            if (song := source.index(row, 0).data(MusicLibraryModel.SongRole)) is not None
+            and self._accept(song)
+        )
+
+    def _matches(self, song: Song) -> bool:
+        if not self._terms:
+            return True
+        name = normalize(f"{song.title} {song.path.name}")
+        return all(term in name for term in self._terms)
+
     def filterAcceptsRow(self, source_row: int, source_parent: _Index) -> bool:
         song = self.sourceModel().index(source_row, 0, source_parent).data(MusicLibraryModel.SongRole)
-        return song is not None and self._accept(song)
+        return song is not None and self._accept(song) and self._matches(song)
 
     def lessThan(self, left: _Index, right: _Index) -> bool:
         a = left.data(MusicLibraryModel.SongRole)

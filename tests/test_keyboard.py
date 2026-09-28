@@ -49,8 +49,10 @@ def test_tab_cycles_url_bar_and_lists(main):
     assert focused() is view.pending_panel.view
     assert view.pending_panel.view.currentIndex().row() == 0  # já marca a 1ª música
     tab()
+    assert focused() is view.filter_edit
+    tab()
     assert focused() is view.processed_panel.view
-    tab(back=True)
+    tab(back=True, times=2)
     assert focused() is view.pending_panel.view
     QTest.keyClick(focused(), Qt.Key.Key_L, Qt.KeyboardModifier.ControlModifier)
     assert focused() is view.url_bar

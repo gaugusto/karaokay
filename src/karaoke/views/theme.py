@@ -116,6 +116,10 @@ QLineEdit#urlBar {{
     padding: 12px 18px;
     font-size: 12pt;
 }}
+QLineEdit#filterBar {{
+    border-radius: 10px;
+    padding: 5px 10px 5px 4px;
+}}
 
 /* ---- botões ---- */
 QPushButton {{

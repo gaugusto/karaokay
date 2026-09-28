@@ -81,7 +81,11 @@ A janela tem duas listas, uma sobre a outra:
   de chegada. Elas são processadas por uma fila, uma de cada vez, nunca em
   paralelo. A que está sendo processada aparece em primeiro, em negrito, com a
   porcentagem do processamento.
-- **Processadas** (embaixo): músicas já separadas, em ordem alfabética.
+- **Processadas** (embaixo): músicas já separadas, em ordem alfabética. O
+  campo **Filtrar processadas**, ao lado do título, mostra só as músicas com
+  todas as palavras digitadas no nome, em qualquer ordem e sem diferenciar
+  maiúsculas nem acentos ("evidencias" encontra "Evidências"). O título passa
+  a mostrar quantas aparecem do total, por exemplo "Processadas (2 de 7)".
 
 Arraste a divisória entre as duas para mudar o tamanho de cada lista. A
 posição fica salva (em `~/.config/karaokay/karaoke.ini`) e é restaurada na
@@ -195,8 +199,11 @@ Tudo pode ser usado sem mouse; o elemento com foco fica destacado em violeta.
 
 | Tecla | Ação |
 |---|---|
-| Tab / Shift+Tab | barra do topo → "A processar" → "Processadas" |
+| Tab / Shift+Tab | barra do topo → "A processar" → filtro → "Processadas" |
 | Ctrl+L | vai para a barra do topo (com as listas visíveis) |
+| Ctrl+F | vai para o filtro de "Processadas" (seleciona o texto que já estiver lá) |
+| Esc (no filtro) | limpa o filtro |
+| ↓ ou Enter (no filtro) | vai para a primeira música encontrada |
 | Enter (na barra) | link: baixa; outro texto: pesquisa no YouTube |
 | ↑ ↓ | escolhe a música na lista |
 | Enter (em "Processadas") | abre no player |
