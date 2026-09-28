@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from PySide6.QtCore import QAbstractItemModel, QEvent, QItemSelectionModel, QModelIndex, QRect, Qt, Signal
+from PySide6.QtCore import QAbstractItemModel, QEvent, QItemSelectionModel, QModelIndex, QRect, Qt, QTimer, Signal
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QHBoxLayout,
@@ -22,8 +22,13 @@ from PySide6.QtWidgets import (
 
 from karaoke.views.splitter import GripSplitter
 from karaoke.models import MusicLibraryModel
+from karaoke.views.settings import settings
 from karaoke.views.song_delegate import PendingSongDelegate, ProcessedSongDelegate, RowAction, song_tooltip
 
+
+SPLITTER_KEY = "main/splitter_ratio"
+DEFAULT_SPLITTER_RATIO = 320 / 700  # "A processar" um pouco menor que "Processadas"
+MIN_SPLITTER_RATIO = 0.05
 
 class _SongListView(QListView):
     delete_pressed = Signal(list)  # caminhos das músicas selecionadas
@@ -259,7 +264,14 @@ class MainWindow(QMainWindow):
         splitter.addWidget(self.pending_panel)
         splitter.addWidget(self.processed_panel)
         splitter.setChildrenCollapsible(False)
-        splitter.setSizes([320, 380])
+        self.splitter = splitter
+        # A posição da divisória é lembrada entre uma execução e outra
+        self._splitter_restored = False
+        self._save_splitter_timer = QTimer(self)
+        self._save_splitter_timer.setSingleShot(True)
+        self._save_splitter_timer.setInterval(400)  # grava quando o arrasto para
+        self._save_splitter_timer.timeout.connect(self.save_splitter_position)
+        splitter.splitterMoved.connect(lambda *_: self._save_splitter_timer.start())
 
         self.library_page = QWidget()
         layout = QVBoxLayout(self.library_page)
@@ -298,6 +310,35 @@ class MainWindow(QMainWindow):
 
         # Definido pelo controlador: decide se a janela pode fechar
         self.close_guard: Callable[[], bool] | None = None
+
+    # ------------------------------------------------------------ divisória
+    def splitter_ratio(self) -> float:
+        """Fração da altura das listas ocupada por "A processar"."""
+        top, bottom = self.splitter.sizes()
+        return top / (top + bottom) if top + bottom else DEFAULT_SPLITTER_RATIO
+
+    def set_splitter_ratio(self, ratio: float) -> None:
+        ratio = min(max(ratio, MIN_SPLITTER_RATIO), 1 - MIN_SPLITTER_RATIO)
+        total = sum(self.splitter.sizes()) or 1000
+        top = round(total * ratio)
+        self.splitter.setSizes([top, total - top])
+
+    def save_splitter_position(self) -> None:
+        self._save_splitter_timer.stop()
+        settings().setValue(SPLITTER_KEY, round(self.splitter_ratio(), 4))
+
+    def restore_splitter_position(self) -> None:
+        try:
+            ratio = float(settings().value(SPLITTER_KEY, DEFAULT_SPLITTER_RATIO))
+        except (TypeError, ValueError):
+            ratio = DEFAULT_SPLITTER_RATIO
+        self.set_splitter_ratio(ratio)
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        if not self._splitter_restored:  # só agora as listas têm a altura de verdade
+            self._splitter_restored = True
+            self.restore_splitter_position()
 
     def focus_url_bar(self) -> None:
         if self.stack.currentWidget() is not self.library_page:
@@ -382,4 +423,6 @@ class MainWindow(QMainWindow):
         if self.close_guard is not None and not self.close_guard():
             event.ignore()
             return
+        if self._save_splitter_timer.isActive():  # arrasto recente ainda não gravado
+            self.save_splitter_position()
         super().closeEvent(event)

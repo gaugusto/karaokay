@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QEasingCurve, QEvent, QPropertyAnimation, QSettings, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QEasingCurve, QEvent, QPropertyAnimation, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractButton,
@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 
 from karaoke.models.lrc import Lyrics
 from karaoke.views import dialogs
+from karaoke.views.settings import settings
 from karaoke.views.background import AnimatedBackground
 from karaoke.views.theme import Colors, media_icon
 
@@ -34,9 +35,7 @@ LYRICS_FONT_STEP = 2
 CURRENT_LINE_SCALE = 1.3          # verso atual 30% maior que os demais
 
 
-def _settings() -> QSettings:
-    """Preferências do usuário (ex.: ~/.config/karaokay/karaoke.ini no Linux)."""
-    return QSettings(QSettings.Format.IniFormat, QSettings.Scope.UserScope, "karaokay", "karaoke")
+_settings = settings  # preferências do usuário (views/settings.py)
 DEFAULT_INSTRUMENTAL_VOLUME = 100  # %
 SCROLL_ANIMATION_MS = 350
 
