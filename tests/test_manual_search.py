@@ -145,7 +145,7 @@ def test_plain_choice_saved_as_txt(song):
 
 
 # ------------------------------------------------------------ integração
-def test_context_menu_search_then_player_opens(qapp, dirs, monkeypatch):
+def test_search_icon_then_player_opens(qapp, dirs, monkeypatch):
     from test_controller import make
 
     import karaoke.controllers.app_controller as app_module
@@ -182,7 +182,7 @@ def test_context_menu_search_then_player_opens(qapp, dirs, monkeypatch):
     app.refresh_library()
     path = str(music / "Artista - Música.m4a")
 
-    view.manual_lyrics_requested.emit(path)  # botão direito > Buscar letra manualmente…
+    view.manual_lyrics_requested.emit(path)  # ícone da lupa: buscar letra manualmente
     search = created[-1]
     search.searcher.finished.emit(1, [rec(7, "Música", "Artista")])
     search.view.use_button.click()

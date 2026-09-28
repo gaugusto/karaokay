@@ -110,12 +110,22 @@ com um tempo `[mm:ss.xx]`, com pelo menos três tempos diferentes. Na lista
 "Processadas" aparece a situação da letra de cada música. A pasta `letras/` não
 é rastreada pelo git.
 
+### Ações de cada música
+
+À direita de cada música há ícones; passe o mouse sobre um deles para ver o que
+ele faz. Em "Processadas": ▶ **abrir no player**, **sincronizar a letra
+automaticamente**, **restaurar a letra original**, **buscar letra manualmente**
+e **excluir**. Em "A processar", só **excluir**. Ícones apagados estão
+indisponíveis para aquela música (por exemplo, sincronizar sem letra
+sincronizada ou restaurar sem uma cópia guardada).
+
 ### Sincronização automática
 
 As letras do LRCLIB costumam estar fora de sincronia com o áudio do YouTube
-(introduções, cortes ou andamento diferentes da versão do álbum). Clique com o
-botão direito numa música processada e escolha **Letra → Sincronizar
-automaticamente com os vocais**. Usando o arquivo de vocais separados, o app:
+(introduções, cortes ou andamento diferentes da versão do álbum). Clique no
+ícone de **setas girando** de uma música processada (**Sincronizar a letra
+automaticamente com os vocais**, Ctrl+S). Usando o arquivo de vocais separados,
+o app:
 
 1. mede os **ataques** da voz (instantes em que o volume sobe de repente, como
    no começo de cada verso) em quadros de 20 ms;
@@ -127,7 +137,7 @@ automaticamente com os vocais**. Usando o arquivo de vocais separados, o app:
    de outra versão da música. Se a letra já estava no lugar, avisa isso.
 
 A letra original fica guardada (`letras/<nome>.original.lrc`) e pode ser
-recuperada em **Letra → Restaurar letra original**. Se o player estiver aberto
+recuperada pelo ícone de **desfazer** (**Restaurar a letra original**, Ctrl+R). Se o player estiver aberto
 com a música, a letra é atualizada na hora. Funciona só com letras
 sincronizadas (`.lrc`): letras sem tempos precisariam de reconhecimento de fala.
 
@@ -135,8 +145,8 @@ sincronizadas (`.lrc`): letras sem tempos precisariam de reconhecimento de fala.
 
 A busca de letra ocupa a janela principal, como o player, e abre sozinha ao
 tocar uma música sem letra. Para trocar uma letra
-errada, clique com o botão direito numa música processada e escolha **Buscar
-letra manualmente…**.
+errada, clique no ícone da **lupa** de uma música processada (**Buscar letra
+manualmente**, Ctrl+B).
 
 Ela já vem preenchida com o melhor palpite de artista e música (a partir
 dos dados do vídeo guardados no download) e mostra os resultados do LRCLIB;
@@ -206,7 +216,9 @@ Tudo pode ser usado sem mouse; o elemento com foco fica destacado em violeta.
 | ↑ ↓ | escolhe a música na lista |
 | Enter (em "Processadas") | abre no player |
 | Delete | exclui (com confirmação); Shift/Ctrl + setas ou clique selecionam várias |
-| Tecla de menu ou Shift+F10 | menu da música (abrir, buscar letra, excluir) |
+| Ctrl+S (em "Processadas") | sincroniza a letra automaticamente |
+| Ctrl+R (em "Processadas") | restaura a letra original |
+| Ctrl+B (em "Processadas") | busca a letra manualmente |
 
 **Player**
 
@@ -262,7 +274,8 @@ src/karaoke/
     lrc.py             leitura de letras LRC (verso e tempo)
   views/         widgets: só exibem dados e emitem sinais
     main_window.py     janela principal
-    song_delegate.py   cartões das músicas nas listas
+    song_delegate.py   cartões das músicas nas listas (com os ícones de ação)
+    icons.py           ícones de linha (SVG) desenhados na cor do tema
     theme.py           tema escuro (cores, fonte e estilos)
     background.py      fundo animado do player
     splitter.py        divisória arrastável com alça visível

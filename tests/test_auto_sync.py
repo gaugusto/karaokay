@@ -175,17 +175,19 @@ def result(confidence, second_peak=0.4):
                       second_peak=second_peak)
 
 
-def test_menu_offers_auto_sync_only_for_synced_lyrics(app):
+def _icons(view, index):
+    return {a.key: a for a in view.processed_panel.view.actions_for(index)}
+
+
+def test_sync_icon_only_enabled_for_synced_lyrics(app):
     view, ctrl, music, letras, _ = app
-    menu = view.build_processed_menu(ctrl.processed.index_of(music / "a.m4a"))
-    letra = next(a.menu() for a in menu.actions() if a.text() == "Letra")
-    texts = {a.text(): a.isEnabled() for a in letra.actions() if a.text()}
-    assert texts["Sincronizar automaticamente com os vocais"] is True
-    assert texts["Restaurar letra original"] is False  # ainda não há cópia
-    menu = view.build_processed_menu(ctrl.processed.index_of(music / "semletra.m4a"))
-    letra = next(a.menu() for a in menu.actions() if a.text() == "Letra")
-    auto = next(a for a in letra.actions() if a.text().startswith("Sincronizar"))
-    assert not auto.isEnabled() and "precisa de letra sincronizada" in auto.text()
+    icons = _icons(view, ctrl.processed.index_of(music / "a.m4a"))
+    assert icons["sync"].enabled and icons["sync"].tooltip == "Sincronizar a letra automaticamente com os vocais"
+    assert not icons["restore"].enabled  # ainda não há cópia
+    (letras / "a.original.lrc").write_text(LRC)
+    assert _icons(view, ctrl.processed.index_of(music / "a.m4a"))["restore"].enabled
+    icons = _icons(view, ctrl.processed.index_of(music / "semletra.m4a"))
+    assert not icons["sync"].enabled and "precisa de letra sincronizada" in icons["sync"].tooltip
 
 
 def test_auto_sync_applies_backs_up_and_restores(app):

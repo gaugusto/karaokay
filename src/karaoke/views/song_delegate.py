@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QModelIndex, QPersistentModelIndex, QRectF, QSize, Qt
-from PySide6.QtGui import QFont, QFontMetrics, QPainter, QPainterPath, QPen
+from dataclasses import dataclass
+
+from PySide6.QtCore import QModelIndex, QPersistentModelIndex, QPointF, QRectF, QSize, Qt
+from PySide6.QtGui import QFont, QFontMetrics, QKeySequence, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QStyle, QStyledItemDelegate, QStyleOptionViewItem
 
 from karaoke.models import LyricsState, MusicLibraryModel, Song, SongState
+from karaoke.views.icons import icon_pixmap
 from karaoke.views.theme import Colors, color
 
 STATE_TOOLTIPS = {
@@ -39,6 +42,56 @@ _LYRICS_BADGES = {
 }
 
 
+@dataclass(frozen=True)
+class RowAction:
+    """Um ícone clicável à direita do cartão."""
+
+    key: str          # "play", "sync", "restore", "search", "delete"
+    tooltip: str      # descrição que aparece ao passar o mouse
+    enabled: bool = True
+    shortcut: str = ""  # atalho com a música selecionada (ex.: "Ctrl+S")
+    danger: bool = False  # destaca em vermelho ao passar o mouse
+
+    @property
+    def icon(self) -> str:
+        return self.key
+
+    @property
+    def full_tooltip(self) -> str:
+        return f"{self.tooltip} ({self.shortcut})" if self.shortcut else self.tooltip
+
+    def matches(self, sequence: QKeySequence) -> bool:
+        return bool(self.shortcut) and QKeySequence(self.shortcut) == sequence
+
+
+def pending_actions(song: Song) -> list[RowAction]:
+    return [RowAction("delete", "Excluir", shortcut="Delete", danger=True)]
+
+
+def processed_actions(song: Song) -> list[RowAction]:
+    synced = song.lyrics_state is LyricsState.SYNCED
+    backup = song.lyrics_backup_path
+    has_backup = bool(backup and backup.is_file())
+    return [
+        RowAction("play", "Abrir no player", shortcut="Enter"),
+        RowAction(
+            "sync",
+            "Sincronizar a letra automaticamente com os vocais"
+            if synced else "Sincronizar automaticamente (precisa de letra sincronizada)",
+            enabled=synced,
+            shortcut="Ctrl+S",
+        ),
+        RowAction(
+            "restore",
+            "Restaurar a letra original" if has_backup else "Restaurar a letra original (nada a restaurar)",
+            enabled=has_backup,
+            shortcut="Ctrl+R",
+        ),
+        RowAction("search", "Buscar letra manualmente", shortcut="Ctrl+B"),
+        RowAction("delete", "Excluir", shortcut="Delete", danger=True),
+    ]
+
+
 def pending_badge(song: Song) -> tuple[str, str]:
     """Etiqueta de uma música na lista "A processar"."""
     if song.state is SongState.SEPARATING:
@@ -63,6 +116,76 @@ class _CardDelegate(QStyledItemDelegate):
     ROW_HEIGHT = 58
     GAP = 6
     RADIUS = 12
+    BUTTON = 34      # área clicável de cada ícone
+    ICON = 18
+    BUTTON_GAP = 2
+    RIGHT_MARGIN = 10
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        # Definidos pela lista: ícone sob o mouse e ícone pressionado, (linha, chave)
+        self.hovered_action: tuple[int, str] | None = None
+        self.pressed_action: tuple[int, str] | None = None
+
+    def actions(self, song: Song) -> list[RowAction]:
+        return []
+
+    def card_rect(self, rect) -> QRectF:
+        return QRectF(rect).adjusted(2, self.GAP / 2, -2, -self.GAP / 2)
+
+    def action_rects(self, rect, song: Song) -> list[tuple[RowAction, QRectF]]:
+        """Ícones da direita para a esquerda, alinhados à direita do cartão."""
+        card = self.card_rect(rect)
+        actions = self.actions(song)
+        result = []
+        right = card.right() - self.RIGHT_MARGIN
+        top = card.center().y() - self.BUTTON / 2
+        for action in reversed(actions):
+            box = QRectF(right - self.BUTTON, top, self.BUTTON, self.BUTTON)
+            result.append((action, box))
+            right = box.left() - self.BUTTON_GAP
+        result.reverse()
+        return result
+
+    def action_at(self, rect, song: Song | None, pos) -> RowAction | None:
+        if song is None:
+            return None
+        point = QPointF(pos)
+        for action, box in self.action_rects(rect, song):
+            if box.contains(point):
+                return action
+        return None
+
+    def _paint_actions(self, painter: QPainter, option, index, song: Song) -> float:
+        """Desenha os ícones e devolve onde eles começam (x)."""
+        boxes = self.action_rects(option.rect, song)
+        if not boxes:
+            return self.card_rect(option.rect).right()
+        ratio = painter.device().devicePixelRatioF() if painter.device() else 1.0
+        row = index.row()
+        for action, box in boxes:
+            hovered = self.hovered_action == (row, action.key) and action.enabled
+            pressed = self.pressed_action == (row, action.key) and action.enabled
+            if hovered or pressed:
+                painter.setPen(Qt.PenStyle.NoPen)
+                if action.danger:
+                    painter.setBrush(color(Colors.DANGER, 70 if pressed else 40))
+                else:
+                    painter.setBrush(color(Colors.ACCENT_DIM if pressed else Colors.BORDER_STRONG))
+                painter.drawRoundedRect(box, 9, 9)
+            if not action.enabled:
+                tint = Colors.TEXT_MUTED
+            elif hovered or pressed:
+                tint = Colors.DANGER if action.danger else Colors.TEXT
+            else:
+                tint = Colors.TEXT_SECONDARY
+            icon = icon_pixmap(action.icon, tint, self.ICON, ratio)
+            offset = (self.BUTTON - self.ICON) / 2
+            if not action.enabled:
+                painter.setOpacity(0.55)
+            painter.drawPixmap(QPointF(box.left() + offset, box.top() + offset), icon)
+            painter.setOpacity(1.0)
+        return boxes[0][1].left()
 
     def sizeHint(self, option: QStyleOptionViewItem, index) -> QSize:
         return QSize(option.rect.width(), self.ROW_HEIGHT + self.GAP)
@@ -89,7 +212,7 @@ class _CardDelegate(QStyledItemDelegate):
             return
         painter.save()
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        card = QRectF(option.rect).adjusted(2, self.GAP / 2, -2, -self.GAP / 2)
+        card = self.card_rect(option.rect)
         selected = bool(option.state & QStyle.StateFlag.State_Selected)
         hovered = bool(option.state & QStyle.StateFlag.State_MouseOver)
         focused = bool(option.state & QStyle.StateFlag.State_HasFocus)
@@ -123,14 +246,18 @@ class _CardDelegate(QStyledItemDelegate):
             painter.drawText(circle, Qt.AlignmentFlag.AlignCenter, str(number))
             x = circle.right() + 14
 
-        # Etiqueta à direita
+        # Ícones de ação, bem à direita
+        actions_left = self._paint_actions(painter, option, index, song)
+        badge_right = actions_left - 12 if actions_left < card.right() else card.right() - 14
+
+        # Etiqueta à direita (antes dos ícones)
         text, badge_color = self.badge(song)
         badge_font = QFont(option.font)
         badge_font.setPointSizeF(option.font.pointSizeF() * 0.85)
         badge_font.setBold(True)
         metrics = QFontMetrics(badge_font)
         badge_w = metrics.horizontalAdvance(text) + 22
-        badge = QRectF(card.right() - 14 - badge_w, center_y - 13, badge_w, 26)
+        badge = QRectF(badge_right - badge_w, center_y - 13, badge_w, 26)
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(color(badge_color, 40))
         painter.drawRoundedRect(badge, 13, 13)
@@ -153,7 +280,7 @@ class _CardDelegate(QStyledItemDelegate):
         # Barra de progresso fina na base do cartão
         percent = self.progress(song)
         if percent is not None:
-            track = QRectF(card.left() + 16, card.bottom() - 9, card.width() - 32, 4)
+            track = QRectF(card.left() + 16, card.bottom() - 9, badge.right() - card.left() - 16, 4)
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(color(Colors.BORDER_STRONG))
             painter.drawRoundedRect(track, 2, 2)
@@ -169,6 +296,9 @@ class PendingSongDelegate(_CardDelegate):
 
     def badge(self, song: Song) -> tuple[str, str]:
         return pending_badge(song)
+
+    def actions(self, song: Song) -> list[RowAction]:
+        return pending_actions(song)
 
     def leading(self, song: Song, row: int) -> int | None:
         return queue_position(song, row)
@@ -190,6 +320,9 @@ class ProcessedSongDelegate(_CardDelegate):
 
     def badge(self, song: Song) -> tuple[str, str]:
         return processed_badge(song)
+
+    def actions(self, song: Song) -> list[RowAction]:
+        return processed_actions(song)
 
 
 def song_tooltip(index: QModelIndex | QPersistentModelIndex) -> str:

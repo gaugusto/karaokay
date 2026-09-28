@@ -4,15 +4,14 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from PySide6.QtCore import QAbstractItemModel, QEvent, QModelIndex, Qt, Signal
-from PySide6.QtGui import QContextMenuEvent, QKeySequence, QShortcut
+from PySide6.QtCore import QAbstractItemModel, QEvent, QItemSelectionModel, QModelIndex, QRect, Qt, Signal
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QListView,
     QMainWindow,
-    QMenu,
     QProgressBar,
     QPushButton,
     QStackedWidget,
@@ -23,16 +22,17 @@ from PySide6.QtWidgets import (
 
 from karaoke.views.splitter import GripSplitter
 from karaoke.models import LyricsState, MusicLibraryModel
-from karaoke.views.song_delegate import PendingSongDelegate, ProcessedSongDelegate, song_tooltip
+from karaoke.views.song_delegate import PendingSongDelegate, ProcessedSongDelegate, RowAction, song_tooltip
 
 
 class _SongListView(QListView):
     delete_pressed = Signal(list)  # caminhos das músicas selecionadas
+    action_triggered = Signal(str, str)  # chave do ícone ("play", "sync"…), caminho da música
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self.setEditTriggers(QListView.EditTrigger.NoEditTriggers)
-        self.setMouseTracking(True)  # destaque do cartão sob o mouse
+        self.setMouseTracking(True)  # destaque do cartão e do ícone sob o mouse
         self.setUniformItemSizes(True)
         self.setVerticalScrollMode(QListView.ScrollMode.ScrollPerPixel)
         # Ctrl/Shift + clique selecionam várias músicas para excluir de uma vez
@@ -50,44 +50,126 @@ class _SongListView(QListView):
         super().focusInEvent(event)
         model = self.model()
         if model is not None and not self.currentIndex().isValid() and model.rowCount():
-            self.setCurrentIndex(model.index(0, 0))
+            if self.selectionModel().hasSelection():  # não desfaz a seleção feita
+                self.selectionModel().setCurrentIndex(
+                    model.index(0, 0), QItemSelectionModel.SelectionFlag.NoUpdate
+                )
+            else:
+                self.setCurrentIndex(model.index(0, 0))
 
-    def event(self, event) -> bool:
-        """Tecla de menu / Shift+F10: abre o menu da música atual (e não a do
-        ponto central da lista, que é o que o Qt usaria)."""
-        if (
-            event.type() == QEvent.Type.ContextMenu
-            and event.reason() == QContextMenuEvent.Reason.Keyboard
-            and self.currentIndex().isValid()
-        ):
-            self.customContextMenuRequested.emit(self.visualRect(self.currentIndex()).center())
-            event.accept()
-            return True
-        return super().event(event)
+    # ------------------------------------------------------ ícones de ação
+    def _delegate(self):
+        delegate = self.itemDelegate()
+        return delegate if hasattr(delegate, "action_at") else None
+
+    def actions_for(self, index: QModelIndex) -> list[RowAction]:
+        delegate = self._delegate()
+        song = index.data(MusicLibraryModel.SongRole) if index.isValid() else None
+        return delegate.actions(song) if delegate is not None and song is not None else []
+
+    def action_rect(self, index: QModelIndex, key: str) -> QRect:
+        """Área do ícone ``key`` na linha ``index`` (coordenadas do viewport)."""
+        delegate = self._delegate()
+        song = index.data(MusicLibraryModel.SongRole)
+        for action, box in delegate.action_rects(self.visualRect(index), song):
+            if action.key == key:
+                return box.toRect()
+        return QRect()
+
+    def action_at(self, pos) -> tuple[QModelIndex, RowAction | None]:
+        index = self.indexAt(pos)
+        delegate = self._delegate()
+        if not index.isValid() or delegate is None:
+            return index, None
+        song = index.data(MusicLibraryModel.SongRole)
+        return index, delegate.action_at(self.visualRect(index), song, pos)
+
+    def _set_marker(self, attr: str, value) -> None:
+        delegate = self._delegate()
+        if delegate is None or getattr(delegate, attr) == value:
+            return
+        setattr(delegate, attr, value)
+        self.viewport().update()
+
+    def _trigger(self, index: QModelIndex, action: RowAction) -> None:
+        path = index.data(MusicLibraryModel.PathRole)
+        if path and action.enabled:
+            self.action_triggered.emit(action.key, path)
+
+    def mouseMoveEvent(self, event) -> None:
+        index, action = self.action_at(event.position().toPoint())
+        self._set_marker("hovered_action", (index.row(), action.key) if action else None)
+        if action is not None and event.buttons() != Qt.MouseButton.NoButton:
+            event.accept()  # arrastar a partir de um ícone não seleciona outras músicas
+            return
+        super().mouseMoveEvent(event)
+        if action is not None and action.enabled:
+            self.viewport().setCursor(Qt.CursorShape.PointingHandCursor)
+        else:
+            self.viewport().unsetCursor()
+
+    def leaveEvent(self, event) -> None:
+        self._set_marker("hovered_action", None)
+        self.viewport().unsetCursor()
+        super().leaveEvent(event)
+
+    def mousePressEvent(self, event) -> None:
+        index, action = self.action_at(event.position().toPoint())
+        if action is None:
+            super().mousePressEvent(event)
+            return
+        # Clique num ícone: marca a música, mas não mexe na seleção múltipla
+        if event.button() == Qt.MouseButton.LeftButton and action.enabled:
+            self._set_marker("pressed_action", (index.row(), action.key))
+            if self.selectionModel().isSelected(index):
+                self.selectionModel().setCurrentIndex(index, QItemSelectionModel.SelectionFlag.NoUpdate)
+            else:
+                self.setCurrentIndex(index)
+        event.accept()
+
+    def mouseReleaseEvent(self, event) -> None:
+        delegate = self._delegate()
+        pressed = delegate.pressed_action if delegate is not None else None
+        if pressed is None:
+            super().mouseReleaseEvent(event)
+            return
+        self._set_marker("pressed_action", None)
+        index, action = self.action_at(event.position().toPoint())
+        if action is not None and (index.row(), action.key) == pressed:
+            self._trigger(index, action)
+        event.accept()
+
+    def mouseDoubleClickEvent(self, event) -> None:
+        _, action = self.action_at(event.position().toPoint())
+        if action is not None:
+            event.accept()  # dois cliques num ícone não abrem o player
+            return
+        super().mouseDoubleClickEvent(event)
 
     def keyPressEvent(self, event) -> None:
-        menu_key = event.key() == Qt.Key.Key_Menu or (
-            event.key() == Qt.Key.Key_F10 and event.modifiers() == Qt.KeyboardModifier.ShiftModifier
-        )
-        if (
-            menu_key
-            and self.currentIndex().isValid()
-            and self.contextMenuPolicy() == Qt.ContextMenuPolicy.CustomContextMenu
-        ):  # tecla de menu ou Shift+F10 (para teclados sem ela)
-            self.customContextMenuRequested.emit(self.visualRect(self.currentIndex()).center())
-            event.accept()
-            return
         if event.key() == Qt.Key.Key_Delete and self.model() is not None:
             paths = self.selected_paths()
             if paths:
                 self.delete_pressed.emit(paths)
             event.accept()
             return
+        # Atalhos dos ícones (Ctrl+S, Ctrl+R, Ctrl+B) na música atual
+        index = self.currentIndex()
+        if index.isValid() and event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            sequence = QKeySequence(event.keyCombination())
+            for action in self.actions_for(index):
+                if action.matches(sequence):
+                    self._trigger(index, action)
+                    event.accept()
+                    return
         super().keyPressEvent(event)
 
     def viewportEvent(self, event: QEvent) -> bool:
         if event.type() == QEvent.Type.ToolTip:
-            index = self.indexAt(event.pos())
+            index, action = self.action_at(event.pos())
+            if action is not None:
+                QToolTip.showText(event.globalPos(), action.full_tooltip, self, self.action_rect(index, action.key))
+                return True
             if index.isValid():
                 QToolTip.showText(event.globalPos(), song_tooltip(index), self)
                 return True
@@ -132,9 +214,9 @@ class MainWindow(QMainWindow):
     url_submitted = Signal(str)
     play_requested = Signal(str)  # caminho da música processada (dois cliques)
     delete_requested = Signal(list)  # caminhos das músicas selecionadas (tecla Delete)
-    manual_lyrics_requested = Signal(str)  # botão direito > Letra > Buscar letra manualmente…
-    auto_sync_requested = Signal(str)      # botão direito > Letra > Sincronizar automaticamente
-    restore_lyrics_requested = Signal(str)  # botão direito > Letra > Restaurar letra original
+    manual_lyrics_requested = Signal(str)  # ícone da lupa (Ctrl+B)
+    auto_sync_requested = Signal(str)      # ícone das setas (Ctrl+S)
+    restore_lyrics_requested = Signal(str)  # ícone de desfazer (Ctrl+R)
 
     def __init__(self) -> None:
         super().__init__()
@@ -170,8 +252,8 @@ class MainWindow(QMainWindow):
         self.processed_panel.view.setItemDelegate(ProcessedSongDelegate(self.processed_panel.view))
         self.processed_panel.view.doubleClicked.connect(self._on_processed_activated)
         self.processed_panel.view.activated.connect(self._on_processed_activated)  # Enter
-        self.processed_panel.view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.processed_panel.view.customContextMenuRequested.connect(self._show_processed_menu)
+        self.pending_panel.view.action_triggered.connect(self._on_row_action)
+        self.processed_panel.view.action_triggered.connect(self._on_row_action)
         self.pending_panel.view.delete_pressed.connect(self.delete_requested)
         self.processed_panel.view.delete_pressed.connect(self.delete_requested)
 
@@ -259,40 +341,18 @@ class MainWindow(QMainWindow):
     def select_pending(self, index: QModelIndex) -> None:
         self.pending_panel.select(index)
 
-    def _show_processed_menu(self, pos) -> None:
-        view = self.processed_panel.view
-        index = view.indexAt(pos)
-        if not index.isValid():
-            return
-        menu = self.build_processed_menu(index)
-        menu.exec(view.viewport().mapToGlobal(pos))
-
-    def build_processed_menu(self, index: QModelIndex) -> QMenu:
-        """Menu do botão direito de uma música processada (com o submenu Letra)."""
-        path = index.data(MusicLibraryModel.PathRole)
-        song = index.data(MusicLibraryModel.SongRole)
-        menu = QMenu(self.processed_panel.view)
-        menu.addAction("Abrir no player", lambda: self.play_requested.emit(path))
-
-        lyrics = menu.addMenu("Letra")
-        auto = lyrics.addAction(
-            "Sincronizar automaticamente com os vocais", lambda: self.auto_sync_requested.emit(path)
-        )
-        synced = song is not None and song.lyrics_state is LyricsState.SYNCED
-        auto.setEnabled(synced)
-        if not synced:
-            auto.setText("Sincronizar automaticamente (precisa de letra sincronizada)")
-        restore = lyrics.addAction(
-            "Restaurar letra original", lambda: self.restore_lyrics_requested.emit(path)
-        )
-        backup = song.lyrics_backup_path if song is not None else None
-        restore.setEnabled(bool(backup and backup.is_file()))
-        lyrics.addSeparator()
-        lyrics.addAction("Buscar letra manualmente…", lambda: self.manual_lyrics_requested.emit(path))
-
-        menu.addSeparator()
-        menu.addAction("Excluir…", lambda: self.delete_requested.emit([path]))
-        return menu
+    def _on_row_action(self, key: str, path: str) -> None:
+        """Ícone clicado (ou atalho) numa música das listas."""
+        signals = {
+            "play": self.play_requested,
+            "sync": self.auto_sync_requested,
+            "restore": self.restore_lyrics_requested,
+            "search": self.manual_lyrics_requested,
+        }
+        if key == "delete":
+            self.delete_requested.emit([path])
+        elif key in signals:
+            signals[key].emit(path)
 
     def _on_processed_activated(self, index: QModelIndex) -> None:
         path = index.data(MusicLibraryModel.PathRole)
