@@ -9,15 +9,20 @@ de repente, como no começo de cada verso:
 2. cada verso da letra vira um "pulso" no instante em que começa;
 3. procura o deslocamento (±90 s) e o andamento (±4%) em que os pulsos mais
    coincidem com os ataques (correlação via FFT);
+   Antes, o volume ganha um piso (o nível do fundo da faixa): trechos de
+   silêncio digital não viram ataques gigantes;
 4. a confiança vem do destaque desse pico em relação a todos os outros
    deslocamentos (z-score), e o 2º melhor pico precisa ser bem menor. Com a
    letra da música certa o pico é nítido e único; com a de outra música, não.
    Sem voz distinguível (volume quase constante), nada é tentado. Se não
    passar, nada é aplicado;
-5. cada verso é ajustado para o ataque nítido mais próximo (±0,3 s).
+5. cada verso é ajustado para o ataque nítido mais próximo (±0,3 s). Se
+   menos de 45% dos versos acharem um ataque por perto, o resultado também é
+   recusado: o pico era enganoso.
 
-Calibração com três músicas reais (vocais separados pelo app): letra certa
-z = 8,8 a 12,7; letra de outra música z = 5,1 a 6,6.
+Calibração com quatro músicas reais (vocais separados pelo app), com a letra
+no lugar e deslocada em +6 s e −9 s: letra certa z = 7,8 a 14,4 (2º pico
+≤ 0,46; versos ajustados ≥ 56%); letra de outra música z = 4,2 a 5,8.
 
 Não usa reconhecimento de fala: só funciona para letras que já têm tempos
 (mesmo que errados). Letras sem tempos precisariam de outro método.
@@ -45,12 +50,24 @@ MIN_LINE_GAP = 0.25        # s mínimos entre versos consecutivos
 MIN_LINES = 4              # versos com texto necessários para tentar
 # Confiança: z-score do pico mapeado para 0–1 (z 5 → 0, z 11 → 1)
 Z_FLOOR, Z_SPAN = 5.0, 6.0
-MIN_CONFIDENCE = 0.40      # z ≈ 7,4
+MIN_CONFIDENCE = 0.30      # z ≈ 6,8: no meio entre letra certa (≥ 7,8) e errada (≤ 5,8)
 HIGH_CONFIDENCE = 0.70     # z ≈ 9,2
 # O 2º melhor pico (a mais de 1 s do melhor) precisa ser bem menor que o 1º.
-# Nas músicas reais: letra certa ≤ 0,62; letra de outra música ≥ 0,64.
+# Nas músicas reais: letra certa ≤ 0,46; letra de outra música ≥ 0,65.
 MAX_SECOND_PEAK = 0.75
 MIN_DYNAMIC_RANGE_DB = 10.0  # abaixo disso não há voz distinguível (ex.: só ruído)
+# Piso do volume: o nível do "fundo" da faixa (10º percentil dos quadros que
+# não são silêncio digital), e no mínimo 50 dB abaixo da voz alta. Sem ele, o
+# silêncio digital (amostras zeradas, −180 dB) que o separador deixa em alguns
+# trechos faz a volta do som parecer um ataque de ~170 dB; meia dúzia desses
+# picos abafava todos os começos de verso e o alinhamento ia parar no lugar
+# errado (ex.: "Night Moves", confiança 14% com a letra já quase certa).
+FLOOR_BELOW_PEAK_DB = 50.0
+FLOOR_PERCENTILE = 10
+DIGITAL_SILENCE_DB = -150.0
+# Com o alinhamento certo, boa parte dos versos cai perto de um ataque nítido
+# (músicas reais: 56% a 96%); um pico enganoso deixa quase todos longe (≈ 30%).
+MIN_SNAPPED_FRACTION = 0.45
 
 
 @dataclass
@@ -65,8 +82,16 @@ class SyncResult:
     second_peak: float = 1.0       # 2º melhor pico / melhor (menor = mais inequívoco)
 
     @property
+    def snapped_fraction(self) -> float:
+        return self.snapped / len(self.old_times) if self.old_times else 0.0
+
+    @property
     def ok(self) -> bool:
-        return self.confidence >= MIN_CONFIDENCE and self.second_peak <= MAX_SECOND_PEAK
+        return (
+            self.confidence >= MIN_CONFIDENCE
+            and self.second_peak <= MAX_SECOND_PEAK
+            and self.snapped_fraction >= MIN_SNAPPED_FRACTION
+        )
 
     @property
     def confidence_label(self) -> str:
@@ -95,8 +120,14 @@ def onset_strength(samples: np.ndarray, rate: int) -> np.ndarray:
         return np.zeros(max(frames, 0))
     trimmed = samples[: frames * hop].reshape(frames, hop).astype(np.float64)
     db = 20 * np.log10(np.sqrt(np.mean(trimmed**2, axis=1)) + 1e-9)
-    if np.percentile(db, 95) - np.percentile(db, 5) < MIN_DYNAMIC_RANGE_DB:
+    loud = np.percentile(db, 95)
+    if loud - np.percentile(db, 5) < MIN_DYNAMIC_RANGE_DB:
         return np.zeros(frames)  # volume quase constante: não há voz para alinhar
+    live = db[db > DIGITAL_SILENCE_DB]
+    floor = loud - FLOOR_BELOW_PEAK_DB
+    if live.size:
+        floor = max(floor, float(np.percentile(live, FLOOR_PERCENTILE)))
+    db = np.maximum(db, floor)  # silêncio digital não vira "ataque" gigante
     db = np.convolve(db, np.ones(3) / 3, mode="same")
     rise = np.zeros_like(db)
     rise[3:] = db[3:] - db[:-3]  # subida em 60 ms

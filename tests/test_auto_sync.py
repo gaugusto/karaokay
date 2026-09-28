@@ -74,6 +74,40 @@ def test_align_refuses_other_song_and_silence():
     assert not result.ok and result.new_times == result.old_times
 
 
+def _digital_silence(audio, seed, gaps=8):
+    """Zera trechos ao acaso, como o separador faz em partes sem voz."""
+    rng = np.random.default_rng(seed)
+    duration = len(audio) / RATE
+    for start in rng.uniform(5, duration - 5, gaps):
+        audio[int(start * RATE):int((start + rng.uniform(1, 2.5)) * RATE)] = 0.0
+    return audio
+
+
+def test_digital_silence_does_not_create_giant_onsets():
+    """Regressão ("Night Moves"): a volta do som depois de amostras zeradas
+    virava um ataque de ~170 dB e o alinhamento ia para o lugar errado."""
+    times, text = make_lyrics()
+    lyrics = parse_lrc(text)
+    applied = 0
+    for seed in range(6):
+        for offset in (7.3, -4.0):
+            audio, _ = sing(times, offset, jitter=0.25)
+            strength = onset_strength(_digital_silence(audio, seed), RATE)
+            assert strength.max() < 12  # sem picos absurdos
+            result = align(lyrics, strength)
+            if result.ok:  # quando aplica, aplica no lugar certo
+                assert abs(result.offset - offset) < 0.5, (seed, offset, result.offset)
+                applied += 1
+    assert applied >= 6
+
+
+def test_refuses_when_few_lines_match_onsets():
+    base = dict(offset=1.0, scale=1.0, confidence=0.9, second_peak=0.3,
+                old_times=[float(i) for i in range(10)], new_times=[float(i) for i in range(10)])
+    assert SyncResult(snapped=5, **base).ok
+    assert not SyncResult(snapped=4, **base).ok  # 40% < 45%
+
+
 def test_letter_already_in_place_gets_only_fine_adjustment():
     times, text = make_lyrics()
     audio, real = sing(times, jitter=0.15)
@@ -186,13 +220,19 @@ def test_low_confidence_changes_nothing(app):
     view, ctrl, music, letras, informed = app
     path = str(music / "a.m4a")
     ctrl.auto_sync_lyrics(path)
-    ctrl.auto_sync.finished.emit(path, result(0.3))
+    ctrl.auto_sync.finished.emit(path, result(0.2))
     assert (letras / "a.lrc").read_text() == LRC and not (letras / "a.original.lrc").exists()
-    assert len(informed) == 1 and "confiança 30%" in informed[0] and "não foi alterada" in informed[0]
+    assert len(informed) == 1 and "confiança 20%" in informed[0] and "não foi alterada" in informed[0]
     ctrl.auto_sync_lyrics(path)
     ctrl.auto_sync.finished.emit(path, result(0.9, second_peak=0.9))  # pico ambíguo
     assert (letras / "a.lrc").read_text() == LRC and len(informed) == 2
     assert "ambíguo" in informed[1]
+    ctrl.auto_sync_lyrics(path)
+    few = result(0.9)
+    few.snapped = 1  # 1 de 3 versos perto de um começo de voz
+    ctrl.auto_sync.finished.emit(path, few)
+    assert (letras / "a.lrc").read_text() == LRC and len(informed) == 3
+    assert "só 1 de 3 versos coincidiram" in informed[2]
 
 
 def test_new_lyrics_or_delete_remove_backup(app, monkeypatch):

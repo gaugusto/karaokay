@@ -28,6 +28,7 @@ from karaoke.services import (
     looks_like_url,
     normalize_youtube_url,
 )
+from karaoke.services.auto_sync import MAX_SECOND_PEAK
 from karaoke.services.auto_sync import MIN_CONFIDENCE as MIN_SYNC_CONFIDENCE
 from karaoke.controllers.lyrics_search_controller import LyricsSearchController
 from karaoke.controllers.player_controller import PlayerController
@@ -356,10 +357,13 @@ class AppController(QObject):
         percent = f"{result.confidence * 100:.0f}%"
         if not result.ok:
             self.view.show_message(f"Sincronização automática não aplicada ({song.title})", 8000)
-            if result.confidence >= MIN_SYNC_CONFIDENCE:  # pico forte, mas não único
-                reason = "o alinhamento ficou ambíguo (mais de uma posição parecida)"
-            else:
+            if result.confidence < MIN_SYNC_CONFIDENCE:
                 reason = f"confiança {percent}"
+            elif result.second_peak > MAX_SECOND_PEAK:  # pico forte, mas não único
+                reason = "o alinhamento ficou ambíguo (mais de uma posição parecida)"
+            else:  # poucos versos batem com o começo da voz
+                reason = (f"só {result.snapped} de {len(result.old_times)} versos "
+                          "coincidiram com o começo da voz")
             dialogs.inform(
                 self.view,
                 "Sincronização automática",
