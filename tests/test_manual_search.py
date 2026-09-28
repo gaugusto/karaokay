@@ -7,7 +7,7 @@ from PySide6.QtCore import QObject, Signal
 from karaoke.controllers import LyricsSearchController
 from karaoke.models import LyricsState, MusicLibraryModel
 from karaoke.services import lyrics as L
-from karaoke.views import LyricsSearchDialog
+from karaoke.views import LyricsSearchPage
 
 SYNCED = "[00:01.00]um\n[00:02.00]dois\n[00:03.00]três\n"
 
@@ -90,7 +90,7 @@ def song(qapp, dirs, monkeypatch):
 
 
 def test_dialog_prefilled_searches_and_saves_choice(song):
-    view, searcher = LyricsSearchDialog(song.title), FakeSearcher()
+    view, searcher = LyricsSearchPage(song.title), FakeSearcher()
     ctrl = LyricsSearchController(song, view, searcher)
     saved = []
     ctrl.saved.connect(saved.append)
@@ -115,7 +115,7 @@ def test_dialog_prefilled_searches_and_saves_choice(song):
 
 
 def test_instrumental_result_cannot_be_used_and_old_results_ignored(song):
-    view, searcher = LyricsSearchDialog(song.title), FakeSearcher()
+    view, searcher = LyricsSearchPage(song.title), FakeSearcher()
     ctrl = LyricsSearchController(song, view, searcher)
     ctrl.start()
     view.set_query("Outro", "Nome")
@@ -134,7 +134,7 @@ def test_instrumental_result_cannot_be_used_and_old_results_ignored(song):
 
 
 def test_plain_choice_saved_as_txt(song):
-    view, searcher = LyricsSearchDialog(song.title), FakeSearcher()
+    view, searcher = LyricsSearchPage(song.title), FakeSearcher()
     ctrl = LyricsSearchController(song, view, searcher)
     saved = []
     ctrl.saved.connect(saved.append)
@@ -167,8 +167,8 @@ def test_context_menu_search_then_player_opens(qapp, dirs, monkeypatch):
 
     real = app_module.LyricsSearchController
 
-    def make_search(song, parent_widget=None, parent=None, opening_player=False):
-        ctrl = real(song, LyricsSearchDialog(song.title), FakeSearcher(), parent=parent,
+    def make_search(song, parent=None, opening_player=False):
+        ctrl = real(song, LyricsSearchPage(song.title), FakeSearcher(), parent=parent,
                     opening_player=opening_player)
         created.append(ctrl)
         return ctrl
@@ -215,29 +215,116 @@ def test_background_search_delivers_on_main_thread(qapp):
     assert got == [(request, [2, 1])] and searcher.latest == request
 
 
-def test_dialog_is_resizable_and_remembers_size(qapp):
-    from PySide6.QtCore import QSize, Qt
+# ------------------------------------------------- página na janela principal
+@pytest.fixture
+def search_app(qapp, dirs, monkeypatch):
+    """App com uma música processada sem letra; a busca e o player são simulados."""
+    from test_controller import make
 
-    LyricsSearchDialog._last_size = None
-    dialog = LyricsSearchDialog("Música")
-    flags = dialog.windowFlags()
-    assert flags & Qt.WindowType.Window and flags & Qt.WindowType.WindowMaximizeButtonHint
-    assert dialog.isSizeGripEnabled()
-    assert dialog.minimumSize() == QSize(560, 420)
-    dialog.show()
-    dialog.resize(1000, 800)
-    dialog.reject()
-    again = LyricsSearchDialog("Outra")
-    assert again.size() == QSize(1000, 800)
-    LyricsSearchDialog._last_size = None
+    import karaoke.controllers.app_controller as app_module
+
+    monkeypatch.setattr(L, "audio_duration", lambda p: 200.0)
+    real = app_module.LyricsSearchController
+    opened = []
+
+    class Recorder:
+        def __init__(self, song, view=None, parent=None):
+            from karaoke.views import PlayerWindow
+
+            opened.append(song.title)
+            self.song, self.view = song, view or PlayerWindow()
+            self.closed = type("S", (), {"connect": lambda *a: None})()
+
+        def start(self):
+            pass
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(app_module, "PlayerController", Recorder)
+    monkeypatch.setattr(
+        app_module, "LyricsSearchController",
+        lambda song, parent=None, opening_player=False: real(
+            song, LyricsSearchPage(song.title), FakeSearcher(), parent=parent, opening_player=opening_player
+        ),
+    )
+    music, separated = dirs
+    for name in ("Artista - Outra", "Artista - Música"):
+        add_song(music, f"{name}.m4a")
+        add_stems(separated, name)
+    view, app = make(dirs)
+    app.refresh_library()
+    from PySide6.QtTest import QTest
+
+    view.show()
+    view.activateWindow()
+    assert QTest.qWaitForWindowActive(view)
+    yield view, app, opened, str(music / "Artista - Música.m4a")
+    if app.lyrics_search is not None:
+        app.lyrics_search.view.reject()  # tira a página antes de destruir a janela
+    view.close_guard = None
+    view.close()
+    QTest.qWait(10)  # deixa os deleteLater rodarem
+
+
+def test_search_page_takes_over_main_window(search_app):
+    view, app, _, path = search_app
+    view.manual_lyrics_requested.emit(path)
+    page = app.lyrics_search.view
+    assert view.showing_page and view.stack.currentWidget() is page
+    assert page.window() is view and not page.isWindow()
+    assert view.windowTitle() == "Karaokê — Buscar letra — Artista - Música"
+    assert page.artist_edit.hasFocus()
+    view.focus_url_bar()  # Ctrl+L não faz nada com a busca na tela
+    assert not view.url_bar.hasFocus()
+
+
+@pytest.mark.parametrize("how", ["button", "cancel", "esc", "ctrl_w"])
+def test_closing_search_page_returns_to_lists(search_app, how):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QApplication
+
+    view, app, opened, path = search_app
+    app.open_player(path)  # sem letra: abre a busca antes do player
+    page = app.lyrics_search.view
+    if how == "button":
+        page.close_button.click()
+    elif how == "cancel":
+        page.cancel_button.click()
+    elif how == "esc":
+        QTest.keyClick(page.track_edit, Qt.Key.Key_Escape)
+    else:
+        QTest.keyClick(page.table, Qt.Key.Key_W, Qt.KeyboardModifier.ControlModifier)
+    QApplication.processEvents()
+
+    assert app.lyrics_search is None and opened == []  # nada salvo, player não abre
+    assert app.model.song(path).lyrics_path is None
+    assert not view.showing_page and view.stack.count() == 1
+    assert view.windowTitle() == "Karaokê"
+    current = view.processed_panel.view.currentIndex()
+    assert current.row() == app.processed.index_of(path).row()
+    assert view.processed_panel.view.hasFocus()
+
+
+def test_choosing_lyrics_goes_straight_to_player(search_app):
+    view, app, opened, path = search_app
+    app.open_player(path)
+    search = app.lyrics_search
+    search.searcher.finished.emit(1, [rec(9, "Música", "Artista")])
+    search.view.use_button.click()
+    assert opened == ["Artista - Música"]
+    assert view.stack.count() == 2  # biblioteca + player (a busca saiu)
+    assert view.stack.currentWidget() is not view.library_page
+    assert view.stack.indexOf(search.view) == -1
 
 
 def test_dialog_explains_when_opening_player(song):
-    view = LyricsSearchDialog(song.title)
+    view = LyricsSearchPage(song.title)
     LyricsSearchController(song, view, FakeSearcher(), opening_player=True)
     assert "ainda não tem letra" in view.context_note.text()
     assert not view.context_note.isHidden()
     assert view.use_button.text() == "Usar e abrir o player"
-    other = LyricsSearchDialog(song.title)
+    other = LyricsSearchPage(song.title)
     LyricsSearchController(song, other, FakeSearcher())
     assert other.context_note.isHidden() and other.use_button.text() == "Usar esta letra"

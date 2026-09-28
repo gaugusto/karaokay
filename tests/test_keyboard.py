@@ -176,9 +176,9 @@ def test_m_marks_first_verse_in_sync_mode(player):
 # --------------------------------------------------------- busca de letra
 def test_search_dialog_keyboard(qapp):
     from karaoke.models import LyricsState
-    from karaoke.views import LyricsSearchDialog
+    from karaoke.views import LyricsSearchPage
 
-    dialog = LyricsSearchDialog("Música")
+    dialog = LyricsSearchPage("Música")
     searches, accepted = [], []
     dialog.search_requested.connect(lambda a, t: searches.append((a, t)))
     dialog.accepted.connect(lambda: accepted.append(True))
@@ -204,23 +204,23 @@ def test_windows_build_without_tab_order_warnings(qapp):
     "'first' and 'second' must be in the same window" e ignora a ordem."""
     from PySide6.QtCore import qInstallMessageHandler
 
-    from karaoke.views import LyricsSearchDialog, MainWindow, PlayerWindow
+    from karaoke.views import LyricsSearchPage, MainWindow, PlayerWindow
 
     warnings = []
     previous = qInstallMessageHandler(lambda mode, ctx, msg: warnings.append(msg))
     try:
         MainWindow()
         PlayerWindow()
-        LyricsSearchDialog("Música")
+        LyricsSearchPage("Música")
     finally:
         qInstallMessageHandler(previous)
     assert [w for w in warnings if "setTabOrder" in w] == []
 
 
 def test_search_dialog_tab_order(qapp):
-    from karaoke.views import LyricsSearchDialog
+    from karaoke.views import LyricsSearchPage
 
-    dialog = LyricsSearchDialog("Música")
+    dialog = LyricsSearchPage("Música")
     activate(dialog)
     dialog.artist_edit.setFocus()
     for widget in [dialog.track_edit, dialog.search_button, dialog.table, dialog.preview]:

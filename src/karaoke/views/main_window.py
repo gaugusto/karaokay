@@ -208,26 +208,29 @@ class MainWindow(QMainWindow):
 
     def focus_url_bar(self) -> None:
         if self.stack.currentWidget() is not self.library_page:
-            return  # com o player aberto, Ctrl+L não faz nada
+            return  # com o player ou a busca de letra na tela, Ctrl+L não faz nada
         self.url_bar.setFocus()
         self.url_bar.selectAll()
 
     # --------------------------------------------------------------- páginas
     @property
-    def showing_player(self) -> bool:
+    def showing_page(self) -> bool:
         return self.stack.currentWidget() is not self.library_page
 
-    def show_player(self, player: QWidget, title: str = "") -> None:
-        """O player ocupa a janela principal."""
-        self.stack.addWidget(player)
-        self.stack.setCurrentWidget(player)
+    def show_page(self, page: QWidget, title: str = "") -> None:
+        """Uma página (player, busca de letra) ocupa a janela principal."""
+        self.stack.addWidget(page)
+        self.stack.setCurrentWidget(page)
         self.setWindowTitle(f"Karaokê — {title}" if title else "Karaokê")
 
-    def show_library(self, player: QWidget | None = None, select: QModelIndex | None = None) -> None:
-        """Volta para as listas (depois de fechar o player)."""
+    def show_library(self, page: QWidget | None = None, select: QModelIndex | None = None) -> None:
+        """Tira a página fechada e volta para as listas, com ``select`` selecionada."""
+        if page is not None and self.stack.indexOf(page) >= 0:
+            was_current = self.stack.currentWidget() is page
+            self.stack.removeWidget(page)
+            if not was_current:
+                return  # outra página continua na tela
         self.stack.setCurrentWidget(self.library_page)
-        if player is not None and self.stack.indexOf(player) >= 0:
-            self.stack.removeWidget(player)
         self.setWindowTitle("Karaokê")
         view = self.processed_panel.view
         if select is not None and select.isValid():

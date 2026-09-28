@@ -114,7 +114,7 @@ class AppController(QObject):
         if self.player is not None:
             self.player.close()  # um player por vez
         view = PlayerWindow()
-        self.view.show_player(view, song.title)
+        self.view.show_page(view, song.title)
         self.player = PlayerController(song, view, parent=self)
         self.player.closed.connect(self._on_player_closed)
         self.player.start()
@@ -165,7 +165,9 @@ class AppController(QObject):
 
     def _can_close(self) -> bool:
         """Ao fechar a janela principal: confirma se há música tocando e
-        fecha o player junto."""
+        fecha o player (e a busca de letra) junto."""
+        if self.lyrics_search is not None:
+            self.lyrics_search.view.reject()
         if self.player is None:
             return True
         if self.player.is_playing and not dialogs.confirm(
@@ -328,22 +330,21 @@ class AppController(QObject):
         self.view.show_message(f"Letra original de {song.title} restaurada", 8000)
 
     # ------------------------------------------------------------ letras
-    # Letras nunca são baixadas sozinhas: só pela janela de busca, quando o
+    # Letras nunca são baixadas sozinhas: só pela página de busca, quando o
     # usuário escolhe uma (ao abrir o player sem letra, ou pelo botão direito).
     def open_manual_search(self, path: str, open_player_after: bool = False) -> None:
-        """Janela para procurar a letra digitando artista e música. Com
+        """Página para procurar a letra digitando artista e música. Com
         ``open_player_after``, o player abre assim que uma letra for escolhida."""
         song = self.model.song(path)
         if song is None or song.state is not SongState.SEPARATED:
             return
         if self.lyrics_search is not None:
             self.lyrics_search.view.reject()  # uma busca por vez
-        search = LyricsSearchController(
-            song, parent_widget=self.view, parent=self, opening_player=open_player_after
-        )
+        search = LyricsSearchController(song, parent=self, opening_player=open_player_after)
         search.saved.connect(lambda state: self._on_manual_lyrics_saved(search, state, open_player_after))
         search.cancelled.connect(lambda: self._close_manual_search(search))
         self.lyrics_search = search
+        self.view.show_page(search.view, f"Buscar letra — {song.title}")  # ocupa a janela, como o player
         search.start()
 
     def _on_manual_lyrics_saved(self, search, state, open_player_after: bool) -> None:
@@ -358,5 +359,6 @@ class AppController(QObject):
     def _close_manual_search(self, search) -> None:
         if self.lyrics_search is search:
             self.lyrics_search = None
+        self.view.show_library(search.view, self.processed.index_of(search.song.path))
         search.view.deleteLater()
         search.deleteLater()
