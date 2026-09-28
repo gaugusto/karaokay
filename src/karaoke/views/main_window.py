@@ -21,13 +21,13 @@ from PySide6.QtWidgets import (
 )
 
 from karaoke.views.splitter import GripSplitter
-from karaoke.models import LyricsState, MusicLibraryModel
+from karaoke.models import MusicLibraryModel
 from karaoke.views.song_delegate import PendingSongDelegate, ProcessedSongDelegate, RowAction, song_tooltip
 
 
 class _SongListView(QListView):
     delete_pressed = Signal(list)  # caminhos das músicas selecionadas
-    action_triggered = Signal(str, str)  # chave do ícone ("play", "sync"…), caminho da música
+    action_triggered = Signal(str, str)  # chave do ícone ("play", "search", "delete"), caminho da música
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -153,7 +153,7 @@ class _SongListView(QListView):
                 self.delete_pressed.emit(paths)
             event.accept()
             return
-        # Atalhos dos ícones (Ctrl+S, Ctrl+R, Ctrl+B) na música atual
+        # Atalho do ícone da lupa (Ctrl+B) na música atual
         index = self.currentIndex()
         if index.isValid() and event.modifiers() & Qt.KeyboardModifier.ControlModifier:
             sequence = QKeySequence(event.keyCombination())
@@ -215,8 +215,6 @@ class MainWindow(QMainWindow):
     play_requested = Signal(str)  # caminho da música processada (dois cliques)
     delete_requested = Signal(list)  # caminhos das músicas selecionadas (tecla Delete)
     manual_lyrics_requested = Signal(str)  # ícone da lupa (Ctrl+B)
-    auto_sync_requested = Signal(str)      # ícone das setas (Ctrl+S)
-    restore_lyrics_requested = Signal(str)  # ícone de desfazer (Ctrl+R)
 
     def __init__(self) -> None:
         super().__init__()
@@ -345,8 +343,6 @@ class MainWindow(QMainWindow):
         """Ícone clicado (ou atalho) numa música das listas."""
         signals = {
             "play": self.play_requested,
-            "sync": self.auto_sync_requested,
-            "restore": self.restore_lyrics_requested,
             "search": self.manual_lyrics_requested,
         }
         if key == "delete":

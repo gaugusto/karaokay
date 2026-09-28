@@ -231,8 +231,6 @@ def save_lyrics(result: LyricsResult, base: Path) -> Path | None:
     for other in (SYNCED_EXT, PLAIN_EXT):
         if other != ext:
             base.with_name(base.name + other).unlink(missing_ok=True)
-    # a cópia de antes da sincronização automática era da letra anterior
-    base.with_name(base.name + ".original" + SYNCED_EXT).unlink(missing_ok=True)
     return target
 
 

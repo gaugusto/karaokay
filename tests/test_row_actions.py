@@ -12,8 +12,6 @@ from karaoke.views.icons import ICON_NAMES, icon_pixmap
 LRC = "[00:05.00]um\n[00:10.00]dois\n[00:15.00]três\n"
 SIGNALS = {
     "play": "play_requested",
-    "sync": "auto_sync_requested",
-    "restore": "restore_lyrics_requested",
     "search": "manual_lyrics_requested",
     "delete": "delete_requested",
 }
@@ -60,11 +58,11 @@ def _click(lv, index, key, double=False):
     QApplication.processEvents()
 
 
-def test_processed_songs_have_five_icons_in_order(lists):
+def test_processed_songs_have_three_icons_in_order(lists):
     view, ctrl, music, _, _ = lists
     lv = view.processed_panel.view
     keys = [a.key for a in lv.actions_for(_row(ctrl, music, "a"))]
-    assert keys == ["play", "sync", "restore", "search", "delete"]
+    assert keys == ["play", "search", "delete"]
     boxes = [lv.action_rect(_row(ctrl, music, "a"), k) for k in keys]
     assert all(left.right() < right.left() for left, right in zip(boxes, boxes[1:]))
     assert boxes[-1].right() <= lv.viewport().width()  # cabem na lista, à direita
@@ -72,7 +70,7 @@ def test_processed_songs_have_five_icons_in_order(lists):
     assert [a.key for a in pending.actions_for(pending.model().index(0, 0))] == ["delete"]
 
 
-@pytest.mark.parametrize("key", ["play", "sync", "search", "delete"])
+@pytest.mark.parametrize("key", ["play", "search", "delete"])
 def test_clicking_icon_emits_request(lists, key):
     view, ctrl, music, _, got = lists
     path = str(music / "a.m4a")
@@ -81,19 +79,15 @@ def test_clicking_icon_emits_request(lists, key):
     assert view.processed_panel.view.currentIndex() == _row(ctrl, music, "a")
 
 
-def test_disabled_icons_do_nothing(lists):
+def test_disabled_icons_do_nothing(lists, monkeypatch):
+    from karaoke.views.song_delegate import RowAction
+
     view, ctrl, music, _, got = lists
     lv = view.processed_panel.view
-    _click(lv, _row(ctrl, music, "b"), "sync")  # sem letra sincronizada
-    _click(lv, _row(ctrl, music, "a"), "restore")  # nada a restaurar
+    monkeypatch.setattr(lv.itemDelegate(), "actions",
+                        lambda song: [RowAction("search", "Indisponível", enabled=False)])
+    _click(lv, _row(ctrl, music, "b"), "search")
     assert got == []
-
-
-def test_restore_icon_enabled_when_backup_exists(lists):
-    view, ctrl, music, letras, got = lists
-    (letras / "a.original.lrc").write_text(LRC)
-    _click(view.processed_panel.view, _row(ctrl, music, "a"), "restore")
-    assert got == [("restore", str(music / "a.m4a"))]
 
 
 def test_double_click_on_icon_does_not_open_player(lists):
@@ -139,19 +133,18 @@ def test_hover_highlights_icon_and_shows_description(lists, monkeypatch):
     view, ctrl, music, _, _ = lists
     lv = view.processed_panel.view
     index = _row(ctrl, music, "a")
-    point = lv.action_rect(index, "sync").center()
+    point = lv.action_rect(index, "search").center()
     move = QMouseEvent(QEvent.Type.MouseMove, QPointF(point), QPointF(lv.viewport().mapToGlobal(point)),
                        Qt.MouseButton.NoButton, Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier)
     QApplication.sendEvent(lv.viewport(), move)
-    assert lv.itemDelegate().hovered_action == (index.row(), "sync")
+    assert lv.itemDelegate().hovered_action == (index.row(), "search")
     assert lv.viewport().cursor().shape() == Qt.CursorShape.PointingHandCursor
 
     shown = []
     monkeypatch.setattr(QToolTip, "showText", lambda pos, text, *args: shown.append(text))
     from PySide6.QtGui import QHelpEvent
 
-    for key, text in [("sync", "Sincronizar a letra automaticamente com os vocais (Ctrl+S)"),
-                      ("play", "Abrir no player (Enter)"), ("delete", "Excluir (Delete)"),
+    for key, text in [("play", "Abrir no player (Enter)"), ("delete", "Excluir (Delete)"),
                       ("search", "Buscar letra manualmente (Ctrl+B)")]:
         p = lv.action_rect(index, key).center()
         QApplication.sendEvent(lv.viewport(), QHelpEvent(QEvent.Type.ToolTip, p, lv.viewport().mapToGlobal(p)))

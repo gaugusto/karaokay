@@ -15,11 +15,6 @@ from PySide6.QtSvg import QSvgRenderer
 _PATHS = {
     # Abrir no player
     "play": '<path d="M8 5.5v13l10.5-6.5z" fill="{c}"/>',
-    # Sincronizar automaticamente (setas girando)
-    "sync": '<path d="M20 12a8 8 0 0 1-14.3 4.9"/><path d="M4 12a8 8 0 0 1 14.3-4.9"/>'
-            '<path d="M18.6 3v4.6H14"/><path d="M5.4 21v-4.6H10"/>',
-    # Restaurar a letra original (desfazer)
-    "restore": '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>',
     # Buscar letra manualmente (lupa)
     "search": '<circle cx="11" cy="11" r="7"/><path d="m20.5 20.5-4.5-4.5"/>',
     # Excluir (lixeira)
