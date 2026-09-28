@@ -422,14 +422,14 @@ def test_main_window_closes_player_and_asks_if_playing(qapp, dirs, answers, monk
     player.state_changed.emit(PlayerState.PLAYING)
     answers["answer"] = False
     assert not view.close()
-    assert answers["asked"] == ["Fechar o Karaokê"]
+    assert answers["asked"] == ["Fechar o Karaokay"]
     assert view.isVisible() and app_ctrl.player is not None
 
     # "Sim": fecha a principal e o player, sem uma segunda pergunta do player
     answers["answer"] = True
     player_view = app_ctrl.player.view
     assert view.close()
-    assert answers["asked"] == ["Fechar o Karaokê", "Fechar o Karaokê"]
+    assert answers["asked"] == ["Fechar o Karaokay", "Fechar o Karaokay"]
     assert app_ctrl.player is None and not player_view.isVisible()
 
 
