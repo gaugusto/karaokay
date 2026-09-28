@@ -1,13 +1,12 @@
-"""Janela de busca manual de letra no LRCLIB."""
+"""Página de busca manual de letra no LRCLIB (ocupa a janela principal)."""
 
 from __future__ import annotations
 
-from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QWidget,
-    QDialog,
-    QDialogButtonBox,
     QFormLayout,
     QHBoxLayout,
     QHeaderView,
@@ -43,31 +42,22 @@ def _format_duration(seconds: float | None, reference: float | None) -> str:
     return text
 
 
-class LyricsSearchDialog(QDialog):
+class LyricsSearchPage(QWidget):
     """Campos de artista e música, tabela de resultados e prévia da letra.
 
-    Só exibe e emite sinais; a busca e a gravação ficam no controlador.
+    Ocupa a janela principal, como o player; ✕, Esc ou "Cancelar" voltam às
+    listas. Só exibe e emite sinais; a busca e a gravação ficam no controlador.
     """
 
     search_requested = Signal(str, str)  # artista, música
-
-    _last_size: QSize | None = None  # tamanho usado da última vez (na sessão)
+    accepted = Signal()  # "Usar esta letra"
+    rejected = Signal()  # ✕ / Esc / Ctrl+W / "Cancelar"
 
     def __init__(self, song_title: str, parent=None) -> None:
         super().__init__(parent)
+        self.setObjectName("lyricsSearchPage")
         self.setWindowTitle(f"Buscar letra — {song_title}")
-        # Janela comum (não "diálogo preso"): o gerenciador de janelas deixa
-        # redimensionar e maximizar; a alça no canto também redimensiona.
-        self.setWindowFlags(
-            Qt.WindowType.Window
-            | Qt.WindowType.WindowTitleHint
-            | Qt.WindowType.WindowSystemMenuHint
-            | Qt.WindowType.WindowMinMaxButtonsHint
-            | Qt.WindowType.WindowCloseButtonHint
-        )
-        self.setSizeGripEnabled(True)
-        self.setMinimumSize(560, 420)
-        self.resize(LyricsSearchDialog._last_size or QSize(860, 640))
+        self._shown_once = False
         self._records: list[dict] = []
         self._kinds: list[LyricsState] = []
         self._duration: float | None = None
@@ -76,6 +66,21 @@ class LyricsSearchDialog(QDialog):
         self.context_note.setObjectName("hint")
         self.context_note.setWordWrap(True)
         self.context_note.hide()
+
+        # Cabeçalho: ✕ à esquerda e título centralizado (como no player)
+        self.close_button = QPushButton("✕")
+        self.close_button.setObjectName("fontButton")
+        self.close_button.setFixedSize(46, 40)
+        self.close_button.setToolTip("Voltar às listas sem escolher (Esc)")
+        self.close_button.setAccessibleName("Fechar a busca de letra")
+        self.close_button.clicked.connect(self.reject)
+        self.title_label = QLabel("Buscar letra")
+        self.title_label.setObjectName("songTitle")
+        self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        top_bar = QHBoxLayout()
+        top_bar.addWidget(self.close_button)
+        top_bar.addWidget(self.title_label, 1)
+        top_bar.addSpacing(46)  # equilibra o ✕ para o título ficar centralizado
 
         intro = QLabel(
             f"Digite o artista e o nome da música para procurar a letra de <b>{song_title}</b> no LRCLIB."
@@ -129,28 +134,40 @@ class LyricsSearchDialog(QDialog):
         splitter.addWidget(self.preview)
         splitter.setSizes([260, 200])
 
-        self.buttons = QDialogButtonBox()
-        self.use_button = self.buttons.addButton("Usar esta letra", QDialogButtonBox.ButtonRole.AcceptRole)
-        self.buttons.addButton("Cancelar", QDialogButtonBox.ButtonRole.RejectRole)
+        self.cancel_button = QPushButton("Cancelar")
+        self.cancel_button.clicked.connect(self.reject)
+        self.use_button = QPushButton("Usar esta letra")
         self.use_button.setObjectName("primary")
         self.use_button.setEnabled(False)
-        self.buttons.accepted.connect(self._accept_if_usable)
-        self.buttons.rejected.connect(self.reject)
+        self.use_button.clicked.connect(self._accept_if_usable)
+        buttons = QHBoxLayout()
+        buttons.addStretch(1)
+        buttons.addWidget(self.cancel_button)
+        buttons.addWidget(self.use_button)
+        # Enter aciona o botão com foco (fora de um QDialog o padrão é só Espaço)
+        for button in (self.search_button, self.cancel_button, self.use_button, self.close_button):
+            button.setAutoDefault(True)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(22, 20, 22, 18)
+        layout.setContentsMargins(28, 22, 28, 18)
         layout.setSpacing(12)
+        layout.addLayout(top_bar)
         layout.addWidget(self.context_note)
         layout.addWidget(intro)
         layout.addLayout(form)
         layout.addWidget(self.status_label)
         layout.addWidget(splitter, 1)
-        layout.addWidget(self.buttons)
+        layout.addLayout(buttons)
+
+        # Esc e Ctrl+W voltam às listas sem escolher
+        for keys in (QKeySequence(Qt.Key.Key_Escape), QKeySequence.StandardKey.Close):  # Close: Ctrl+W e Ctrl+F4
+            shortcut = QShortcut(keys, self, self.reject)
+            shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
 
         # Ordem do Tab (só depois de todos os widgets estarem na janela)
         self.preview.setTabChangesFocus(True)
         chain = [self.artist_edit, self.track_edit, self.search_button, self.table,
-                 self.preview, self.use_button, self.buttons.buttons()[-1]]
+                 self.preview, self.cancel_button, self.use_button, self.close_button]
         for first, second in zip(chain, chain[1:]):
             QWidget.setTabOrder(first, second)
 
@@ -258,6 +275,15 @@ class LyricsSearchDialog(QDialog):
             return
         super().keyPressEvent(event)
 
-    def done(self, result: int) -> None:
-        LyricsSearchDialog._last_size = self.size()  # próxima janela abre do mesmo tamanho
-        super().done(result)
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        if not self._shown_once:
+            self._shown_once = True
+            self.artist_edit.setFocus()
+
+    # ------------------------------------------------------------ resultado
+    def accept(self) -> None:
+        self.accepted.emit()
+
+    def reject(self) -> None:
+        self.rejected.emit()

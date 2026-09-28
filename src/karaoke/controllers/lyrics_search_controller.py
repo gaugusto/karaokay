@@ -14,14 +14,15 @@ from karaoke.services.lyrics import (
     save_lyrics,
     sort_candidates,
 )
-from karaoke.views.lyrics_search_dialog import LyricsSearchDialog
+from karaoke.views.lyrics_search_page import LyricsSearchPage
 
 
 class LyricsSearchController(QObject):
-    """Abre a janela, faz as buscas e salva a letra escolhida.
+    """Controla a página de busca, faz as buscas e salva a letra escolhida.
 
     Emite ``saved`` com o estado da letra gravada (SYNCED ou PLAIN) ou
-    ``cancelled`` se a janela for fechada sem escolher.
+    ``cancelled`` se a página for fechada sem escolher. Quem mostra a página
+    (na janela principal) é o AppController.
     """
 
     saved = Signal(object)  # LyricsState
@@ -30,15 +31,14 @@ class LyricsSearchController(QObject):
     def __init__(
         self,
         song: Song,
-        view: LyricsSearchDialog | None = None,
+        view: LyricsSearchPage | None = None,
         searcher: ManualLyricsSearch | None = None,
-        parent_widget=None,
         parent=None,
         opening_player: bool = False,
     ) -> None:
         super().__init__(parent)
         self.song = song
-        self.view = view or LyricsSearchDialog(song.title, parent_widget)
+        self.view = view or LyricsSearchPage(song.title)
         self.searcher = searcher or ManualLyricsSearch(parent=self)
         info = load_track_info(song.path, song.metadata_path)
         self.duration = info.duration
@@ -56,10 +56,9 @@ class LyricsSearchController(QObject):
         self.view.rejected.connect(self.cancelled)
 
     def start(self) -> None:
-        """Mostra a janela e já faz a primeira busca com o palpite."""
-        self.view.show()
-        self.view.raise_()
-        self.view.activateWindow()
+        """Já faz a primeira busca com o palpite."""
+        if self.view.isWindow():  # fora da janela principal (ex.: testes)
+            self.view.show()
         self.view.search_button.click()
 
     def _search(self, artist: str, track: str) -> None:

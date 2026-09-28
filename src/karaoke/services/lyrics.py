@@ -1,6 +1,6 @@
 """Busca de letras no LRCLIB (https://lrclib.net).
 
-A busca só acontece pela janela de busca manual: o usuário escolhe o
+A busca só acontece pela página de busca manual: o usuário escolhe o
 resultado e só então a letra é salva.
 """
 

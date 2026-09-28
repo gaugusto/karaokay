@@ -75,7 +75,7 @@ de "A processar" e é tentada de novo na próxima vez que o app abrir.
 ### Letras
 
 As letras **não são baixadas automaticamente**. Quando você abre no player uma
-música que ainda não tem letra, o app abre a janela de busca de letra (ver
+música que ainda não tem letra, o app abre a busca de letra (ver
 abaixo); o player só abre depois que você escolher uma, e não abre se você
 cancelar. A letra escolhida é salva em `letras/` com o mesmo nome do arquivo de
 áudio:
@@ -112,18 +112,20 @@ sincronizadas (`.lrc`): letras sem tempos precisariam de reconhecimento de fala.
 
 ### Busca de letra
 
-A janela abre sozinha ao tocar uma música sem letra. Para trocar uma letra
+A busca de letra ocupa a janela principal, como o player, e abre sozinha ao
+tocar uma música sem letra. Para trocar uma letra
 errada, clique com o botão direito numa música processada e escolha **Buscar
 letra manualmente…**.
 
-A janela já vem preenchida com o melhor palpite de artista e música (a partir
+Ela já vem preenchida com o melhor palpite de artista e música (a partir
 dos dados do vídeo guardados no download) e mostra os resultados do LRCLIB;
 ajuste o texto e aperte Enter para buscar de novo. Os resultados mostram álbum,
 duração (com a diferença para o áudio) e se a letra é sincronizada; as
 sincronizadas de duração mais parecida aparecem primeiro. Selecione um
 resultado para ver a letra e clique em **Usar esta letra** (ou **Usar e abrir o
-player**). Nada é salvo sem essa escolha. A janela pode ser redimensionada e
-maximizada, e abre do mesmo tamanho da última vez.
+player**, que já troca a busca pelo player). Nada é salvo sem essa escolha:
+**✕**, **Cancelar**, Esc ou Ctrl+W voltam às listas sem mudar nada, com a
+música selecionada.
 
 ### Player
 
@@ -205,11 +207,11 @@ Tudo pode ser usado sem mouse; o elemento com foco fica destacado em violeta.
 
 | Tecla | Ação |
 |---|---|
-| Tab / Shift+Tab | artista → música → Buscar → resultados → letra → botões |
-| Enter (nos campos) | busca de novo (não fecha a janela) |
+| Tab / Shift+Tab | artista → música → Buscar → resultados → letra → Cancelar → Usar → ✕ |
+| Enter (nos campos) | busca de novo |
 | ↓ (nos campos) | vai para os resultados |
 | ↑ ↓ e Enter (nos resultados) | escolhe e usa a letra |
-| Esc | cancela |
+| Esc / Ctrl+W | cancela e volta às listas |
 
 ### Modelo de separação
 
@@ -234,7 +236,7 @@ src/karaoke/
     background.py      fundo animado do player
     splitter.py        divisória arrastável com alça visível
     player_window.py   player (ocupa a janela principal)
-    lyrics_search_dialog.py  busca manual de letra
+    lyrics_search_page.py    busca manual de letra (página da janela principal)
   controllers/   ligam visões, modelos e serviços
     app_controller.py  download, fila de processamento, exclusão e letras
     player_controller.py  player: áudio, letra e controles
@@ -242,7 +244,7 @@ src/karaoke/
   services/      integrações externas, rodando em segundo plano
     downloader.py      yt-dlp
     separator.py       audio-separator (BS-RoFormer)
-    lyrics.py          busca de letras no LRCLIB (pela janela de busca)
+    lyrics.py          busca de letras no LRCLIB (pela página de busca)
     auto_sync.py       sincronização automática da letra com os vocais
     stem_player.py     mistura e reprodução de vocais + instrumental
     files.py           remoção dos arquivos de uma música

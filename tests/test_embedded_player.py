@@ -43,7 +43,7 @@ def _open(ctrl, music, name="b"):
 def test_player_takes_over_main_window(app):
     view, ctrl, _, music = app
     player_view = _open(ctrl, music)
-    assert view.showing_player
+    assert view.showing_page
     assert view.stack.currentWidget() is player_view
     assert player_view.embedded and player_view.window() is view
     assert "b" in view.windowTitle()
@@ -63,7 +63,7 @@ def test_closing_player_returns_to_lists(app, how):
     QApplication.processEvents()
 
     assert ctrl.player is None and ("stop",) in player.calls
-    assert not view.showing_player
+    assert not view.showing_page
     assert view.stack.count() == 1  # só a biblioteca
     assert view.windowTitle() == "Karaokê"
     # a música que estava tocando fica selecionada na lista de processadas
@@ -80,12 +80,12 @@ def test_closing_while_playing_asks(app, answers):  # noqa: F811
     answers["answer"] = False
     player_view.close_button.click()
     assert answers["asked"] == ["Fechar o player"]
-    assert view.showing_player and ctrl.player is not None
+    assert view.showing_page and ctrl.player is not None
 
     answers["answer"] = True
     player_view.close_button.click()
     QApplication.processEvents()
-    assert not view.showing_player and ctrl.player is None
+    assert not view.showing_page and ctrl.player is None
 
 
 def test_fullscreen_acts_on_main_window_and_is_undone_on_close(app):
@@ -97,13 +97,13 @@ def test_fullscreen_acts_on_main_window_and_is_undone_on_close(app):
 
     player_view._on_escape()  # 1º Esc: só sai da tela cheia
     assert not (view.windowState() & Qt.WindowState.WindowFullScreen)
-    assert view.showing_player
+    assert view.showing_page
 
     player_view.set_fullscreen(True)
     player_view.close_button.click()  # fechar na tela cheia devolve a janela ao normal
     QApplication.processEvents()
     assert not (view.windowState() & Qt.WindowState.WindowFullScreen)
-    assert not view.showing_player
+    assert not view.showing_page
 
 
 def test_opening_another_song_replaces_player(app):
@@ -120,4 +120,4 @@ def test_ctrl_l_does_nothing_while_player_is_shown(app):
     _open(ctrl, music)
     view.focus_url_bar()
     assert not view.url_bar.hasFocus()
-    assert view.showing_player
+    assert view.showing_page
