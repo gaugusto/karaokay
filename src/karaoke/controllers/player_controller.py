@@ -62,14 +62,6 @@ class PlayerController(QObject):
             return
         self.player.load(vocals, instrumental)
 
-    def reload_lyrics(self) -> None:
-        """Lê a letra de novo do disco (ex.: depois da sincronização automática)."""
-        self.lyrics = load_lyrics(self.song.lyrics_path)
-        if self.view.in_sync_mode:
-            self.view.set_sync_mode(False)
-        self.view.set_lyrics(self.lyrics)
-        self._on_position(self.player.position())
-
     @property
     def is_playing(self) -> bool:
         return self.player.state is PlayerState.PLAYING

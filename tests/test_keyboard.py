@@ -68,22 +68,17 @@ def test_arrows_and_enter_open_processed_song(main):
     assert played == [str(music / "b.m4a")]
 
 
-def test_icon_shortcuts_act_on_current_song(main):
+def test_ctrl_b_searches_lyrics_of_current_song(main):
     view, ctrl, music = main
     got = []
-    for signal in (view.auto_sync_requested, view.restore_lyrics_requested, view.manual_lyrics_requested):
-        signal.disconnect()
-    view.auto_sync_requested.connect(lambda p: got.append(("sync", p)))
-    view.restore_lyrics_requested.connect(lambda p: got.append(("restore", p)))
+    view.manual_lyrics_requested.disconnect()
     view.manual_lyrics_requested.connect(lambda p: got.append(("search", p)))
     lv = view.processed_panel.view
     lv.setFocus()
     QTest.keyClick(lv, Qt.Key.Key_Down)  # "b"
     QTest.keyClick(lv, Qt.Key.Key_B, Qt.KeyboardModifier.ControlModifier)
     assert got == [("search", str(music / "b.m4a"))]
-    # sem letra sincronizada nem cópia: Ctrl+S e Ctrl+R não fazem nada
-    QTest.keyClick(lv, Qt.Key.Key_S, Qt.KeyboardModifier.ControlModifier)
-    QTest.keyClick(lv, Qt.Key.Key_R, Qt.KeyboardModifier.ControlModifier)
+    QTest.keyClick(lv, Qt.Key.Key_S, Qt.KeyboardModifier.ControlModifier)  # sem ação
     assert len(got) == 1
 
 

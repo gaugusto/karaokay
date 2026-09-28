@@ -113,33 +113,8 @@ com um tempo `[mm:ss.xx]`, com pelo menos três tempos diferentes. Na lista
 ### Ações de cada música
 
 À direita de cada música há ícones; passe o mouse sobre um deles para ver o que
-ele faz. Em "Processadas": ▶ **abrir no player**, **sincronizar a letra
-automaticamente**, **restaurar a letra original**, **buscar letra manualmente**
-e **excluir**. Em "A processar", só **excluir**. Ícones apagados estão
-indisponíveis para aquela música (por exemplo, sincronizar sem letra
-sincronizada ou restaurar sem uma cópia guardada).
-
-### Sincronização automática
-
-As letras do LRCLIB costumam estar fora de sincronia com o áudio do YouTube
-(introduções, cortes ou andamento diferentes da versão do álbum). Clique no
-ícone de **setas girando** de uma música processada (**Sincronizar a letra
-automaticamente com os vocais**, Ctrl+S). Usando o arquivo de vocais separados,
-o app:
-
-1. mede os **ataques** da voz (instantes em que o volume sobe de repente, como
-   no começo de cada verso) em quadros de 20 ms;
-2. encontra o deslocamento (até ±90 s) e o andamento (±4%) em que o começo
-   dos versos da letra mais coincide com esses ataques;
-3. ajusta cada verso para o ataque nítido mais próximo (até ±0,3 s);
-4. só aplica se o encaixe for **inequívoco** (pico de correlação destacado e
-   sem outro parecido). Senão, avisa e não muda nada: provavelmente a letra é
-   de outra versão da música. Se a letra já estava no lugar, avisa isso.
-
-A letra original fica guardada (`letras/<nome>.original.lrc`) e pode ser
-recuperada pelo ícone de **desfazer** (**Restaurar a letra original**, Ctrl+R). Se o player estiver aberto
-com a música, a letra é atualizada na hora. Funciona só com letras
-sincronizadas (`.lrc`): letras sem tempos precisariam de reconhecimento de fala.
+ele faz. Em "Processadas": ▶ **abrir no player**, **buscar letra manualmente**
+e **excluir**. Em "A processar", só **excluir**.
 
 ### Busca de letra
 
@@ -216,8 +191,6 @@ Tudo pode ser usado sem mouse; o elemento com foco fica destacado em violeta.
 | ↑ ↓ | escolhe a música na lista |
 | Enter (em "Processadas") | abre no player |
 | Delete | exclui (com confirmação); Shift/Ctrl + setas ou clique selecionam várias |
-| Ctrl+S (em "Processadas") | sincroniza a letra automaticamente |
-| Ctrl+R (em "Processadas") | restaura a letra original |
 | Ctrl+B (em "Processadas") | busca a letra manualmente |
 
 **Player**
@@ -291,7 +264,6 @@ src/karaoke/
     youtube_search.py  pesquisa no YouTube (yt-dlp) e miniaturas
     separator.py       audio-separator (BS-RoFormer)
     lyrics.py          busca de letras no LRCLIB (pela página de busca)
-    auto_sync.py       sincronização automática da letra com os vocais
     stem_player.py     mistura e reprodução de vocais + instrumental
     files.py           remoção dos arquivos de uma música
   paths.py       pastas do projeto

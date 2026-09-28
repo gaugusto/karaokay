@@ -99,38 +99,3 @@ def load_lyrics(path: Path | None) -> Lyrics:
     if path.suffix == SYNCED_EXT and is_synced_lrc(text):
         return parse_lrc(text)
     return plain_lyrics(_TIMESTAMP.sub("", text))
-
-
-def _format_stamp(seconds: float) -> str:
-    seconds = max(0.0, seconds)
-    minutes = int(seconds // 60)
-    return f"[{minutes:02d}:{seconds - minutes * 60:05.2f}]"
-
-
-def retime_lrc(text: str, mapping: dict[float, float]) -> str:
-    """Reescreve os tempos de um LRC.
-
-    ``mapping`` leva o tempo efetivo de cada verso (já com a tag [offset]
-    aplicada, arredondado a 3 casas) ao tempo novo. A tag [offset] sai, pois
-    o ajuste passa a estar nos próprios tempos; cabeçalhos como [ar:] ficam.
-    """
-    offset = 0.0
-    for raw in text.splitlines():
-        match = _OFFSET.match(raw)
-        if match:
-            offset = int(match.group(1)) / 1000
-    out = []
-    for raw in text.splitlines():
-        if _OFFSET.match(raw):
-            continue
-        rest = raw.strip()
-        stamps = []
-        while (match := _TIMESTAMP.match(rest)) is not None:
-            stamps.append(max(0.0, _seconds(*match.groups()) - offset))
-            rest = rest[match.end():].lstrip()
-        if not stamps:
-            out.append(raw)
-            continue
-        prefix = "".join(_format_stamp(mapping.get(round(t, 3), t)) for t in stamps)
-        out.append(prefix + rest)
-    return "\n".join(out).rstrip() + "\n"

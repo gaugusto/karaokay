@@ -46,7 +46,7 @@ _LYRICS_BADGES = {
 class RowAction:
     """Um ícone clicável à direita do cartão."""
 
-    key: str          # "play", "sync", "restore", "search", "delete"
+    key: str          # "play", "search", "delete"
     tooltip: str      # descrição que aparece ao passar o mouse
     enabled: bool = True
     shortcut: str = ""  # atalho com a música selecionada (ex.: "Ctrl+S")
@@ -69,24 +69,8 @@ def pending_actions(song: Song) -> list[RowAction]:
 
 
 def processed_actions(song: Song) -> list[RowAction]:
-    synced = song.lyrics_state is LyricsState.SYNCED
-    backup = song.lyrics_backup_path
-    has_backup = bool(backup and backup.is_file())
     return [
         RowAction("play", "Abrir no player", shortcut="Enter"),
-        RowAction(
-            "sync",
-            "Sincronizar a letra automaticamente com os vocais"
-            if synced else "Sincronizar automaticamente (precisa de letra sincronizada)",
-            enabled=synced,
-            shortcut="Ctrl+S",
-        ),
-        RowAction(
-            "restore",
-            "Restaurar a letra original" if has_backup else "Restaurar a letra original (nada a restaurar)",
-            enabled=has_backup,
-            shortcut="Ctrl+R",
-        ),
         RowAction("search", "Buscar letra manualmente", shortcut="Ctrl+B"),
         RowAction("delete", "Excluir", shortcut="Delete", danger=True),
     ]
