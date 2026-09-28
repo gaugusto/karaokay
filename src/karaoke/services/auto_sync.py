@@ -1,15 +1,23 @@
 """Sincronização automática da letra com os vocais separados.
 
-Ideia: no arquivo de vocais só há voz, então dá para saber quando alguém está
-cantando. A letra LRC diz quando cada verso começa. O algoritmo:
+Nos vocais separados de músicas reais quase nunca há silêncio entre os versos
+(reverberação, respiração e vazamento preenchem as pausas). Por isso o
+alinhamento usa os **ataques** da voz, os instantes em que o volume sobe
+de repente, como no começo de cada verso:
 
-1. mede a atividade da voz em quadros de 20 ms (volume acima do ruído);
-2. monta a atividade "esperada" pela letra (cada verso canta do seu início
-   até pouco antes do próximo);
-3. procura o deslocamento (±90 s) e a escala de andamento (±4%) que fazem
-   as duas baterem melhor (correlação via FFT);
-4. ajusta cada verso para o recomeço da voz mais próximo (±1,2 s);
-5. calcula uma nota de confiança; abaixo do mínimo, nada é aplicado.
+1. força de ataque por quadro de 20 ms (subida do volume em dB, normalizada);
+2. cada verso da letra vira um "pulso" no instante em que começa;
+3. procura o deslocamento (±90 s) e o andamento (±4%) em que os pulsos mais
+   coincidem com os ataques (correlação via FFT);
+4. a confiança vem do destaque desse pico em relação a todos os outros
+   deslocamentos (z-score), e o 2º melhor pico precisa ser bem menor. Com a
+   letra da música certa o pico é nítido e único; com a de outra música, não.
+   Sem voz distinguível (volume quase constante), nada é tentado. Se não
+   passar, nada é aplicado;
+5. cada verso é ajustado para o ataque nítido mais próximo (±0,3 s).
+
+Calibração com três músicas reais (vocais separados pelo app): letra certa
+z = 8,8 a 12,7; letra de outra música z = 5,1 a 6,6.
 
 Não usa reconhecimento de fala: só funciona para letras que já têm tempos
 (mesmo que errados). Letras sem tempos precisariam de outro método.
@@ -30,30 +38,35 @@ from karaoke.models.lrc import Lyrics
 HOP = 0.02                 # s por quadro
 MAX_SHIFT = 90.0           # s de deslocamento procurados para cada lado
 SCALES = np.round(np.arange(0.96, 1.0401, 0.005), 3)  # andamento (1 = igual)
-SNAP_WINDOW = 1.2          # s para procurar o recomeço da voz perto de cada verso
-MIN_GAP_BEFORE_ONSET = 0.2  # s de silêncio antes de contar como "recomeço"
+PULSE_SIGMA = 0.08         # s: largura do "pulso" de cada verso
+SNAP_WINDOW = 0.3          # s: ajuste fino máximo de cada verso
+PEAK_MIN = 2.0             # força mínima (desvios-padrão) de um ataque "nítido"
 MIN_LINE_GAP = 0.25        # s mínimos entre versos consecutivos
-MAX_LINE_DURATION = 8.0    # s máximos que um verso "canta" na atividade esperada
-MATCH_WINDOW = 0.8         # s: verso "casa" se a voz recomeça até essa distância
-# Confiança = menor entre (a) sobreposição voz esperada × ouvida (F1) e
-# (b) fração dos versos que casam com um recomeço da voz. Em testes com vocais
-# sintéticos, a música certa ficou ≥ 0,67 e a de outra música ≤ 0,46.
-MIN_CONFIDENCE = 0.55
-HIGH_CONFIDENCE = 0.75
+MIN_LINES = 4              # versos com texto necessários para tentar
+# Confiança: z-score do pico mapeado para 0–1 (z 5 → 0, z 11 → 1)
+Z_FLOOR, Z_SPAN = 5.0, 6.0
+MIN_CONFIDENCE = 0.40      # z ≈ 7,4
+HIGH_CONFIDENCE = 0.70     # z ≈ 9,2
+# O 2º melhor pico (a mais de 1 s do melhor) precisa ser bem menor que o 1º.
+# Nas músicas reais: letra certa ≤ 0,62; letra de outra música ≥ 0,64.
+MAX_SECOND_PEAK = 0.75
+MIN_DYNAMIC_RANGE_DB = 10.0  # abaixo disso não há voz distinguível (ex.: só ruído)
 
 
 @dataclass
 class SyncResult:
     offset: float                  # s somados aos tempos (depois da escala)
     scale: float                   # andamento aplicado aos tempos
-    confidence: float              # 0–1 (F1 entre voz esperada e ouvida)
+    confidence: float              # 0–1
     old_times: list[float] = field(default_factory=list)
     new_times: list[float] = field(default_factory=list)
     snapped: int = 0               # versos ajustados individualmente
+    peak_z: float = 0.0            # destaque do pico de correlação
+    second_peak: float = 1.0       # 2º melhor pico / melhor (menor = mais inequívoco)
 
     @property
     def ok(self) -> bool:
-        return self.confidence >= MIN_CONFIDENCE
+        return self.confidence >= MIN_CONFIDENCE and self.second_peak <= MAX_SECOND_PEAK
 
     @property
     def confidence_label(self) -> str:
@@ -61,139 +74,110 @@ class SyncResult:
             return "alta"
         return "média" if self.ok else "baixa"
 
+    @property
+    def already_synced(self) -> bool:
+        """A letra já estava praticamente no lugar (só ajustes finos)."""
+        return abs(self.offset) < 0.3 and abs(self.scale - 1.0) < 1e-6
+
     def mapping(self) -> dict[float, float]:
         """Tempo antigo -> tempo novo, para reescrever o LRC."""
         return {round(o, 3): n for o, n in zip(self.old_times, self.new_times)}
 
 
 # ------------------------------------------------------------------ áudio
-def vocal_activity(samples: np.ndarray, rate: int) -> np.ndarray:
-    """Atividade da voz (0–1) por quadro de 20 ms, a partir do áudio dos vocais."""
+def onset_strength(samples: np.ndarray, rate: int) -> np.ndarray:
+    """Força de ataque da voz por quadro de 20 ms (normalizada: média 0, desvio 1)."""
     if samples.ndim > 1:
         samples = samples.mean(axis=1)
     hop = max(1, int(rate * HOP))
     frames = len(samples) // hop
-    if frames == 0:
-        return np.zeros(0)
+    if frames < 10:
+        return np.zeros(max(frames, 0))
     trimmed = samples[: frames * hop].reshape(frames, hop).astype(np.float64)
-    rms = np.sqrt(np.mean(trimmed**2, axis=1)) + 1e-9
-    db = 20 * np.log10(rms)
-    db = np.convolve(db, np.ones(5) / 5, mode="same")  # suaviza ~100 ms
-    floor, loud = np.percentile(db, 10), np.percentile(db, 95)
-    if loud - floor < 6:  # praticamente sem variação: não há voz distinguível
+    db = 20 * np.log10(np.sqrt(np.mean(trimmed**2, axis=1)) + 1e-9)
+    if np.percentile(db, 95) - np.percentile(db, 5) < MIN_DYNAMIC_RANGE_DB:
+        return np.zeros(frames)  # volume quase constante: não há voz para alinhar
+    db = np.convolve(db, np.ones(3) / 3, mode="same")
+    rise = np.zeros_like(db)
+    rise[3:] = db[3:] - db[:-3]  # subida em 60 ms
+    strength = np.maximum(rise, 0.0)
+    std = strength.std()
+    if std < 1e-9:
         return np.zeros(frames)
-    threshold = floor + 0.35 * (loud - floor)
-    return np.clip((db - threshold) / (0.3 * (loud - floor)) + 0.5, 0.0, 1.0)
+    return (strength - strength.mean()) / std
 
 
-def load_vocal_activity(path: Path) -> np.ndarray:
+def load_onset_strength(path: Path) -> np.ndarray:
     import soundfile as sf
 
     samples, rate = sf.read(str(path), dtype="float32", always_2d=True)
-    return vocal_activity(samples, rate)
+    return onset_strength(samples, rate)
 
 
-# ------------------------------------------------------------------ letra
-def _sung_lines(lyrics: Lyrics) -> list[tuple[float, float]]:
-    """(início, fim) de cada verso com texto, pela própria letra."""
-    lines = [line for line in lyrics.lines if line.time is not None]
-    spans = []
-    for i, line in enumerate(lines):
-        if not line.text.strip():
-            continue
-        nxt = lines[i + 1].time if i + 1 < len(lines) else line.time + 4.0
-        end = min(nxt - 0.3, line.time + MAX_LINE_DURATION)
-        spans.append((line.time, max(end, line.time + 0.5)))
-    return spans
+# ------------------------------------------------------------ alinhamento
+def _pulses(starts: list[float], scale: float, frames: int) -> np.ndarray:
+    train = np.zeros(frames)
+    for start in starts:
+        i = int(round(start * scale / HOP))
+        if 0 <= i < frames:
+            train[i] = 1.0
+    half = int(3 * PULSE_SIGMA / HOP)
+    kernel = np.exp(-0.5 * (np.arange(-half, half + 1) * HOP / PULSE_SIGMA) ** 2)
+    return np.convolve(train, kernel, mode="same")
 
 
-def expected_activity(spans: list[tuple[float, float]], scale: float, frames: int) -> np.ndarray:
-    expected = np.zeros(frames)
-    for start, end in spans:
-        a, b = int(start * scale / HOP), int(end * scale / HOP)
-        a, b = max(a, 0), min(b, frames)
-        if b > a:
-            expected[a:b] = 1.0
-    return expected
-
-
-def _correlate(expected: np.ndarray, observed: np.ndarray, max_lag: int) -> np.ndarray:
+def _correlate(template: np.ndarray, signal: np.ndarray, max_lag: int) -> np.ndarray:
     """score[lag] para lag em [-max_lag, max_lag] (lag>0 = letra atrasa)."""
-    n = len(expected) + len(observed)
+    n = len(template) + len(signal)
     size = 1 << (n - 1).bit_length()
-    corr = np.fft.irfft(np.fft.rfft(observed, size) * np.conj(np.fft.rfft(expected, size)), size)
+    corr = np.fft.irfft(np.fft.rfft(signal, size) * np.conj(np.fft.rfft(template, size)), size)
     lags = np.arange(-max_lag, max_lag + 1)
     return corr[lags % size]
 
 
-def _f1(expected: np.ndarray, observed: np.ndarray) -> float:
-    active = observed > 0.5
-    exp = expected > 0.5
-    tp = np.sum(active & exp)
-    if tp == 0:
-        return 0.0
-    precision = tp / max(np.sum(exp), 1)
-    recall = tp / max(np.sum(active), 1)
-    return float(2 * precision * recall / (precision + recall))
+def _peaks(strength: np.ndarray) -> np.ndarray:
+    """Instantes (s) dos ataques nítidos."""
+    s = strength
+    is_peak = (s[1:-1] > s[:-2]) & (s[1:-1] >= s[2:]) & (s[1:-1] > PEAK_MIN)
+    return (np.nonzero(is_peak)[0] + 1) * HOP
 
 
-def _onsets(observed: np.ndarray) -> np.ndarray:
-    """Quadros em que a voz recomeça depois de uma pausa."""
-    active = observed > 0.5
-    need = int(MIN_GAP_BEFORE_ONSET / HOP)
-    onsets = []
-    silent = need  # conta o começo do arquivo como silêncio
-    for i, on in enumerate(active):
-        if on:
-            if silent >= need:
-                onsets.append(i)
-            silent = 0
-        else:
-            silent += 1
-    return np.array(onsets, dtype=float) * HOP
-
-
-def align(lyrics: Lyrics, observed: np.ndarray) -> SyncResult:
-    """Calcula os novos tempos dos versos a partir da atividade da voz."""
+def align(lyrics: Lyrics, strength: np.ndarray) -> SyncResult:
+    """Calcula os novos tempos dos versos a partir da força de ataque da voz."""
     old = [line.time for line in lyrics.lines if line.time is not None]
-    spans = _sung_lines(lyrics)
-    if not spans or len(observed) == 0 or not observed.any():
+    starts = [line.time for line in lyrics.lines if line.time is not None and line.text.strip()]
+    if len(starts) < MIN_LINES or len(strength) == 0 or not np.any(strength):
         return SyncResult(0.0, 1.0, 0.0, old, list(old))
 
-    centered = observed - observed.mean()
     max_lag = int(MAX_SHIFT / HOP)
-    best = (-np.inf, 0, 1.0)
+    padded = np.pad(strength, (0, max_lag))
+    best = None
     for scale in SCALES:
-        expected = expected_activity(spans, scale, len(observed) + max_lag)
-        scores = _correlate(expected, np.pad(centered, (0, max_lag)), max_lag)
-        lag = int(np.argmax(scores)) - max_lag
-        if scores[lag + max_lag] > best[0]:
-            best = (scores[lag + max_lag], lag, float(scale))
-    _, lag, scale = best
+        template = _pulses(starts, float(scale), len(padded))
+        scores = _correlate(template, padded, max_lag)
+        k = int(np.argmax(scores))
+        if best is None or scores[k] > best[0]:
+            best = (scores[k], k - max_lag, float(scale), scores)
+    value, lag, scale, scores = best
     offset = lag * HOP
+    z = float((value - scores.mean()) / (scores.std() + 1e-12))
+    confidence = float(np.clip((z - Z_FLOOR) / Z_SPAN, 0.0, 1.0))
+    far = np.abs(np.arange(len(scores)) - (lag + max_lag)) > int(1.0 / HOP)
+    second = float(scores[far].max() / value) if value > 0 and far.any() else 1.0
 
-    shifted = [(s * scale + offset, e * scale + offset) for s, e in spans]
-    overlap = _f1(expected_activity(shifted, 1.0, len(observed)), observed)
-    onsets = _onsets(observed)
-    if onsets.size:
-        matched = sum(np.min(np.abs(onsets - start)) <= MATCH_WINDOW for start, _ in shifted)
-        match_ratio = matched / len(shifted)
-    else:
-        match_ratio = 0.0
-    confidence = float(min(overlap, match_ratio))
-
-    # Ajuste fino: cada verso vai para o recomeço da voz mais próximo
+    # Ajuste fino: cada verso vai para o ataque nítido mais próximo
+    peaks = _peaks(strength)
     new, snapped, previous = [], 0, -np.inf
     for time in old:
         target = time * scale + offset
-        if onsets.size:
-            nearest = onsets[np.argmin(np.abs(onsets - target))]
+        if peaks.size:
+            nearest = peaks[np.argmin(np.abs(peaks - target))]
             if abs(nearest - target) <= SNAP_WINDOW and nearest >= previous + MIN_LINE_GAP:
                 target, snapped = nearest, snapped + 1
         target = max(target, previous + MIN_LINE_GAP, 0.0)
         new.append(round(float(target), 2))
         previous = target
-    return SyncResult(offset, scale, confidence, old, new, snapped)
+    return SyncResult(offset, scale, confidence, old, new, snapped, z, second)
 
 
 # ---------------------------------------------------------------- serviço
@@ -209,7 +193,7 @@ class AutoSyncService(QObject):
 
         def work() -> None:
             try:
-                signal, args = self.finished, (song_path, align(lyrics, load_vocal_activity(vocals)))
+                signal, args = self.finished, (song_path, align(lyrics, load_onset_strength(vocals)))
             except Exception as exc:
                 signal, args = self.failed, (song_path, str(exc) or exc.__class__.__name__)
             if not shiboken6.isValid(self):

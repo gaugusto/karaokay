@@ -6,7 +6,7 @@ from conftest import add_song, add_stems
 from PySide6.QtCore import QObject, Signal
 
 from karaoke.models import LyricsState, load_lyrics, parse_lrc, retime_lrc
-from karaoke.services.auto_sync import SyncResult, align, vocal_activity
+from karaoke.services.auto_sync import SyncResult, align, onset_strength
 
 RATE = 8000
 
@@ -21,8 +21,12 @@ def make_lyrics(seed=1, lines=24):
     return times, text
 
 
-def sing(times, offset=0.0, scale=1.0, jitter=0.0, seed=2):
-    """Vocais sintéticos: um trecho "cantado" por verso, com ruído de fundo."""
+def sing(times, offset=0.0, scale=1.0, jitter=0.0, seed=2, reverb=True):
+    """Vocais sintéticos: um trecho "cantado" por verso, com ruído de fundo.
+
+    Com ``reverb``, uma cauda longa preenche as pausas entre os versos, como
+    nos vocais separados de músicas reais (quase nunca há silêncio de verdade).
+    """
     rng = np.random.default_rng(seed)
     duration = times[-1] * scale + offset + 20
     audio = rng.normal(0, 0.003, int(duration * RATE))
@@ -35,6 +39,12 @@ def sing(times, offset=0.0, scale=1.0, jitter=0.0, seed=2):
         tt = np.arange(b - a) / RATE
         audio[a:b] += 0.2 * np.sin(2 * np.pi * rng.uniform(180, 400) * tt) * (0.6 + 0.4 * np.sin(2 * np.pi * 3 * tt))
         real.append(start)
+    if reverb:  # cauda de ~1,5 s: a voz "nunca para" entre os versos
+        tail = np.exp(-np.arange(int(1.5 * RATE)) / (0.5 * RATE)) * rng.normal(0, 1, int(1.5 * RATE))
+        tail /= np.abs(tail).sum()
+        size = 1 << (len(audio) + len(tail)).bit_length()  # convolução via FFT (rápida)
+        wet = np.fft.irfft(np.fft.rfft(audio, size) * np.fft.rfft(tail, size), size)[: len(audio)]
+        audio = audio + 0.15 * wet
     return audio.astype("float32"), real
 
 
@@ -43,12 +53,12 @@ def sing(times, offset=0.0, scale=1.0, jitter=0.0, seed=2):
 def test_align_recovers_offset_and_tempo(offset, scale):
     times, text = make_lyrics()
     audio, real = sing(times, offset, scale, jitter=0.25)
-    result = align(parse_lrc(text), vocal_activity(audio, RATE))
+    result = align(parse_lrc(text), onset_strength(audio, RATE))
     assert result.ok and result.confidence_label in ("alta", "média")
-    assert abs(result.offset - offset) < 1.0 and result.scale == pytest.approx(scale)
+    assert abs(result.offset - offset) < 0.5 and abs(result.scale - scale) <= 0.0051
     before = np.mean(np.abs(np.array(times) - np.array(real)))
     after = np.mean(np.abs(np.array(result.new_times) - np.array(real)))
-    assert before > 3.5 and after < 0.1  # de segundos de erro para centésimos
+    assert before > 3.5 and after < 0.15  # de segundos de erro para décimos/centésimos
     assert all(b > a for a, b in zip(result.new_times, result.new_times[1:]))  # ordem mantida
 
 
@@ -58,10 +68,18 @@ def test_align_refuses_other_song_and_silence():
     for seed in range(5):  # vocais de outra música: versos em outros lugares
         other = sorted(np.random.default_rng(300 + seed).uniform(5, 150, 24))
         audio, _ = sing(list(other), seed=seed)
-        assert not align(lyrics, vocal_activity(audio, RATE)).ok, seed
+        assert not align(lyrics, onset_strength(audio, RATE)).ok, seed
     noise = np.random.default_rng(9).normal(0, 0.003, 150 * RATE).astype("float32")
-    result = align(lyrics, vocal_activity(noise, RATE))
+    result = align(lyrics, onset_strength(noise, RATE))
     assert not result.ok and result.new_times == result.old_times
+
+
+def test_letter_already_in_place_gets_only_fine_adjustment():
+    times, text = make_lyrics()
+    audio, real = sing(times, jitter=0.15)
+    result = align(parse_lrc(text), onset_strength(audio, RATE))
+    assert result.ok and result.already_synced
+    assert np.max(np.abs(np.array(result.new_times) - np.array(times))) <= 0.35
 
 
 def test_retime_keeps_headers_and_bakes_offset():
@@ -117,9 +135,10 @@ def app(qapp, dirs, monkeypatch):
     return view, ctrl, music, letras, informed
 
 
-def result(confidence):
+def result(confidence, second_peak=0.4):
     return SyncResult(offset=2.0, scale=1.0, confidence=confidence,
-                      old_times=[5.0, 10.0, 15.0], new_times=[7.0, 12.1, 17.0], snapped=3)
+                      old_times=[5.0, 10.0, 15.0], new_times=[7.0, 12.1, 17.0], snapped=3,
+                      second_peak=second_peak)
 
 
 def test_menu_offers_auto_sync_only_for_synced_lyrics(app):
@@ -147,11 +166,15 @@ def test_auto_sync_applies_backs_up_and_restores(app):
     assert (letras / "a.lrc").read_text().splitlines() == ["[ar:X]", "[00:07.00]um", "[00:12.10]dois", "[00:17.00]três"]
     assert (letras / "a.original.lrc").read_text() == LRC
     assert "deslocamento +2,0 s" in view.statusBar().currentMessage()
+    assert "3 de 3 versos com ajuste fino" in view.statusBar().currentMessage()
     assert "confiança alta" in view.statusBar().currentMessage()
 
     ctrl.auto_sync_lyrics(path)  # 2ª vez: a cópia continua sendo a original
-    ctrl.auto_sync.finished.emit(path, SyncResult(1.0, 1.0, 0.9, [7.0, 12.1, 17.0], [8.0, 13.0, 18.0], 3))
+    ctrl.auto_sync.finished.emit(
+        path, SyncResult(0.1, 1.0, 0.9, [7.0, 12.1, 17.0], [7.1, 12.2, 17.1], 3, second_peak=0.4)
+    )
     assert (letras / "a.original.lrc").read_text() == LRC
+    assert "já estava praticamente sincronizada" in view.statusBar().currentMessage()
 
     view.restore_lyrics_requested.emit(path)
     assert (letras / "a.lrc").read_text() == LRC
@@ -166,6 +189,10 @@ def test_low_confidence_changes_nothing(app):
     ctrl.auto_sync.finished.emit(path, result(0.3))
     assert (letras / "a.lrc").read_text() == LRC and not (letras / "a.original.lrc").exists()
     assert len(informed) == 1 and "confiança 30%" in informed[0] and "não foi alterada" in informed[0]
+    ctrl.auto_sync_lyrics(path)
+    ctrl.auto_sync.finished.emit(path, result(0.9, second_peak=0.9))  # pico ambíguo
+    assert (letras / "a.lrc").read_text() == LRC and len(informed) == 2
+    assert "ambíguo" in informed[1]
 
 
 def test_new_lyrics_or_delete_remove_backup(app, monkeypatch):
@@ -196,7 +223,7 @@ def test_service_end_to_end_with_real_files(qapp, tmp_path):
     from karaoke.services import AutoSyncService
 
     times, text = make_lyrics(lines=16)
-    audio, real = sing(times, offset=6.0, jitter=0.15)
+    audio, real = sing(times, offset=6.0, jitter=0.15)  # com reverberação
     vocals = tmp_path / "vocais.flac"
     sf.write(vocals, np.column_stack([audio, audio]), RATE)
     service, got = AutoSyncService(), []
@@ -207,5 +234,5 @@ def test_service_end_to_end_with_real_files(qapp, tmp_path):
     QTimer.singleShot(10000, loop.quit)
     loop.exec()
     (r,) = got
-    assert r.ok and abs(r.offset - 6.0) < 1.0
-    assert np.mean(np.abs(np.array(r.new_times) - np.array(real))) < 0.1
+    assert r.ok and abs(r.offset - 6.0) < 0.5
+    assert np.mean(np.abs(np.array(r.new_times) - np.array(real))) < 0.15

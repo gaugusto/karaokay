@@ -24,9 +24,15 @@ from karaoke.services import (
     delete_paths,
     normalize_youtube_url,
 )
+from karaoke.services.auto_sync import MIN_CONFIDENCE as MIN_SYNC_CONFIDENCE
 from karaoke.controllers.lyrics_search_controller import LyricsSearchController
 from karaoke.controllers.player_controller import PlayerController
 from karaoke.views import MainWindow, dialogs
+
+
+def _br(value: float) -> str:
+    """Número com uma casa decimal e vírgula (ex.: 5,1)."""
+    return f"{value:.1f}".replace(".", ",")
 
 
 class AppController(QObject):
@@ -257,11 +263,15 @@ class AppController(QObject):
         percent = f"{result.confidence * 100:.0f}%"
         if not result.ok:
             self.view.show_message(f"Sincronização automática não aplicada ({song.title})", 8000)
+            if result.confidence >= MIN_SYNC_CONFIDENCE:  # pico forte, mas não único
+                reason = "o alinhamento ficou ambíguo (mais de uma posição parecida)"
+            else:
+                reason = f"confiança {percent}"
             dialogs.inform(
                 self.view,
                 "Sincronização automática",
                 f"Não foi possível sincronizar \"{song.title}\" com segurança "
-                f"(confiança {percent}). A letra não foi alterada.\n\n"
+                f"({reason}). A letra não foi alterada.\n\n"
                 "Talvez a letra seja de outra versão da música: tente outra pela "
                 "busca manual, ou ajuste no player com o botão Sincronizar.",
             )
@@ -277,16 +287,19 @@ class AppController(QObject):
             return
         if self.player is not None and self.player.song.path == song.path:
             self.player.reload_lyrics()
-        sign = "+" if result.offset >= 0 else "−"
-        details = f"deslocamento {sign}{abs(result.offset):.1f} s".replace(".", ",")
-        if abs(result.scale - 1.0) > 1e-6:
-            details += f", andamento {result.scale * 100:.1f}%".replace(".", ",")
-        sung = len(result.old_times)
-        self.view.show_message(
-            f"Letra de {song.title} sincronizada: {details}, {result.snapped} de {sung} versos "
-            f"ajustados, confiança {result.confidence_label} ({percent})",
-            15000,
-        )
+        lines = len(result.old_times)
+        if result.already_synced:
+            summary = (
+                f"Letra de {song.title}: já estava praticamente sincronizada; "
+                f"{result.snapped} de {lines} versos receberam ajuste fino"
+            )
+        else:
+            sign = "+" if result.offset >= 0 else "−"
+            summary = f"Letra de {song.title} sincronizada: deslocamento {sign}{_br(abs(result.offset))} s"
+            if abs(result.scale - 1.0) > 1e-6:
+                summary += f", andamento {_br(result.scale * 100)}%"
+            summary += f", {result.snapped} de {lines} versos com ajuste fino"
+        self.view.show_message(f"{summary} (confiança {result.confidence_label}, {percent})", 15000)
 
     def _on_auto_sync_failed(self, path: str, message: str) -> None:
         self._syncing.discard(path)
