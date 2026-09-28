@@ -27,14 +27,35 @@ ficam na raiz do projeto.
 
 ## Uso
 
-Cole um link do YouTube na barra do topo e pressione **Enter**. Valem links
-completos (`youtube.com/watch?v=…`, `music.youtube.com`, Shorts) e o link curto
-do próprio YouTube (`youtu.be/…`), com ou sem `https://`. O aplicativo baixa
+Cole um link do YouTube na barra do topo e pressione **Enter** (ou clique em
+**Buscar**). Valem links completos (`youtube.com/watch?v=…`,
+`music.youtube.com`, Shorts) e o link curto do próprio YouTube (`youtu.be/…`),
+com ou sem `https://`. O aplicativo baixa
 somente o áudio, na melhor qualidade disponível (sem reconversão), para a pasta
 `músicas/` na raiz do projeto. Essa pasta não é rastreada pelo git. Todas as
 músicas dela aparecem na lista da janela, que se atualiza automaticamente.
 
-Se os downloads começarem a falhar, atualize o yt-dlp (`pip install -U yt-dlp`):
+A barra continua livre durante um download: outros links entram numa fila de
+downloads e são baixados um de cada vez, na ordem.
+
+### Pesquisar no YouTube
+
+Digite o nome da música (ou artista e música) na mesma barra e pressione
+**Enter**. Qualquer texto que não seja um link abre a página de resultados, que
+ocupa a janela principal como o player. Ela mostra os 10 primeiros vídeos do
+YouTube, cada um com miniatura, título, canal e duração.
+
+- **Adicionar** (ou ↑ ↓ para escolher e Enter) baixa o vídeo e volta às
+  listas. A música entra em "A processar" como se o link tivesse sido colado.
+- **▶** abre o vídeo no navegador, para conferir antes de escolher.
+- O campo no topo da página permite pesquisar de novo; colar um link ali
+  também baixa direto.
+- **✕**, Esc ou Ctrl+W voltam às listas sem baixar nada.
+
+Canais, playlists e transmissões ao vivo não aparecem nos resultados. A
+pesquisa usa o próprio yt-dlp; nenhuma conta ou chave de API é necessária.
+
+Se os downloads ou a pesquisa começarem a falhar, atualize o yt-dlp (`pip install -U yt-dlp`):
 o YouTube muda com frequência.
 
 ### Excluir músicas
@@ -179,9 +200,9 @@ Tudo pode ser usado sem mouse; o elemento com foco fica destacado em violeta.
 
 | Tecla | Ação |
 |---|---|
-| Tab / Shift+Tab | barra de link → "A processar" → "Processadas" |
-| Ctrl+L | vai para a barra de link (com as listas visíveis) |
-| Enter (na barra) | baixa o link |
+| Tab / Shift+Tab | barra do topo → "A processar" → "Processadas" |
+| Ctrl+L | vai para a barra do topo (com as listas visíveis) |
+| Enter (na barra) | link: baixa; outro texto: pesquisa no YouTube |
 | ↑ ↓ | escolhe a música na lista |
 | Enter (em "Processadas") | abre no player |
 | Delete | exclui (com confirmação); Shift/Ctrl + setas ou clique selecionam várias |
@@ -202,6 +223,16 @@ Tudo pode ser usado sem mouse; o elemento com foco fica destacado em violeta.
 | M | na sincronização, marca o primeiro verso (em vez de clicar) |
 | Esc | cancela a sincronização; senão sai da tela cheia; senão fecha o player |
 | Ctrl+W | fecha o player e volta às listas |
+
+**Pesquisa no YouTube**
+
+| Tecla | Ação |
+|---|---|
+| Tab / Shift+Tab | pesquisa → Buscar → resultados → ✕ |
+| Enter (no campo) | pesquisa de novo (ou baixa, se for um link) |
+| ↓ (no campo) | vai para os resultados |
+| ↑ ↓ e Enter (nos resultados) | escolhe e adiciona |
+| Esc / Ctrl+W | volta às listas |
 
 **Busca de letra**
 
@@ -237,12 +268,14 @@ src/karaoke/
     splitter.py        divisória arrastável com alça visível
     player_window.py   player (ocupa a janela principal)
     lyrics_search_page.py    busca manual de letra (página da janela principal)
+    youtube_results_page.py  resultados da pesquisa no YouTube (página)
   controllers/   ligam visões, modelos e serviços
-    app_controller.py  download, fila de processamento, exclusão e letras
+    app_controller.py  download (e fila), pesquisa, processamento, exclusão e letras
     player_controller.py  player: áudio, letra e controles
     lyrics_search_controller.py  busca manual de letra
   services/      integrações externas, rodando em segundo plano
-    downloader.py      yt-dlp
+    downloader.py      yt-dlp (download do áudio)
+    youtube_search.py  pesquisa no YouTube (yt-dlp) e miniaturas
     separator.py       audio-separator (BS-RoFormer)
     lyrics.py          busca de letras no LRCLIB (pela página de busca)
     auto_sync.py       sincronização automática da letra com os vocais

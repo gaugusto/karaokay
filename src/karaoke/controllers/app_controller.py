@@ -5,7 +5,8 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-from PySide6.QtCore import QFileSystemWatcher, QObject
+from PySide6.QtCore import QFileSystemWatcher, QObject, QUrl
+from PySide6.QtGui import QDesktopServices
 
 from karaoke import paths
 from karaoke.models import (
@@ -21,13 +22,16 @@ from karaoke.services import (
     AutoSyncService,
     DownloadService,
     SeparationService,
+    VideoResult,
+    YouTubeSearchService,
     delete_paths,
+    looks_like_url,
     normalize_youtube_url,
 )
 from karaoke.services.auto_sync import MIN_CONFIDENCE as MIN_SYNC_CONFIDENCE
 from karaoke.controllers.lyrics_search_controller import LyricsSearchController
 from karaoke.controllers.player_controller import PlayerController
-from karaoke.views import MainWindow, PlayerWindow, dialogs
+from karaoke.views import MainWindow, PlayerWindow, YouTubeResultsPage, dialogs
 
 
 def _br(value: float) -> str:
@@ -43,6 +47,7 @@ class AppController(QObject):
         downloader: DownloadService | None = None,
         separator: SeparationService | None = None,
         auto_sync: AutoSyncService | None = None,
+        youtube_search: YouTubeSearchService | None = None,
         parent=None,
     ) -> None:
         super().__init__(parent)
@@ -56,6 +61,13 @@ class AppController(QObject):
         )
 
         self.auto_sync = auto_sync or AutoSyncService(self)
+        self.youtube_search = youtube_search or YouTubeSearchService(self)
+        self.youtube_search.finished.connect(self._on_youtube_results)
+        self.youtube_search.failed.connect(self._on_youtube_failed)
+        self.youtube_search.thumbnail_ready.connect(self._on_youtube_thumbnail)
+        self.results_page: YouTubeResultsPage | None = None
+        self._downloads: list[str] = []  # fila de links esperando o download atual
+        self._downloading = False
         self._syncing: set[str] = set()
 
         self.pending = pending_songs(self.model, self)
@@ -165,7 +177,9 @@ class AppController(QObject):
 
     def _can_close(self) -> bool:
         """Ao fechar a janela principal: confirma se há música tocando e
-        fecha o player (e a busca de letra) junto."""
+        fecha o player (e as páginas de busca) junto."""
+        if self.results_page is not None:
+            self.close_youtube_results()
         if self.lyrics_search is not None:
             self.lyrics_search.view.reject()
         if self.player is None:
@@ -197,25 +211,97 @@ class AppController(QObject):
 
     # ---------------------------------------------------------------- download
     def download(self, text: str) -> None:
+        """Barra do topo (ou campo da página de resultados): link do YouTube
+        baixa; outro texto pesquisa no YouTube."""
+        text = text.strip()
+        if not text:
+            return
         url = normalize_youtube_url(text)  # aceita também sem https://
-        if url is None:
+        if url is not None:
+            self.view.clear_url()
+            if self.results_page is not None:
+                self.close_youtube_results()  # colou um link na página de resultados
+            self._enqueue_download(url)
+        elif looks_like_url(text):
             self.view.show_message("Isso não parece um link do YouTube.", 5000)
+        else:
+            self.search_youtube(text)
+
+    def _enqueue_download(self, url: str) -> None:
+        """Um download por vez; os outros esperam na fila, na ordem pedida."""
+        if self._downloading or url in self._downloads:
+            if url not in self._downloads:
+                self._downloads.append(url)
+            self.view.show_message(f"Na fila de downloads ({len(self._downloads)} esperando).", 5000)
             return
-        if not self.downloader.start(url):
-            self.view.show_message("Aguarde o download atual terminar.", 5000)
+        if not self.downloader.start(url):  # ocupado por fora do controle da fila
+            self._downloads.append(url)
             return
+        self._downloading = True
         self.view.set_download_running(True)
+
+    def _start_next_download(self) -> None:
+        self._downloading = False
+        if self._downloads:
+            self._enqueue_download(self._downloads.pop(0))
 
     def _on_download_finished(self, path: str) -> None:
         self.view.set_download_running(False)
-        self.view.clear_url()
         self.refresh_library()
         self.view.select_pending(self.pending.index_of(path))
         self.view.show_message("Download concluído.", 5000)
+        self._start_next_download()
 
     def _on_download_failed(self, message: str) -> None:
         self.view.set_download_running(False)
         self.view.show_message(f"Falha no download: {message}", 10000)
+        self._start_next_download()
+
+    # ------------------------------------------------------- pesquisa no YouTube
+    def search_youtube(self, query: str) -> None:
+        """Mostra a página de resultados (ocupa a janela, como o player)."""
+        page = self.results_page
+        if page is None:
+            page = self.results_page = YouTubeResultsPage(query)
+            page.submitted.connect(self.download)
+            page.add_requested.connect(self.add_from_search)
+            page.open_requested.connect(self._open_in_browser)
+            page.rejected.connect(self.close_youtube_results)
+            self.view.show_page(page, "Pesquisar no YouTube")
+        self.view.clear_url()
+        page.set_searching(query)
+        self.youtube_search.search(query)
+
+    def _on_youtube_results(self, request: int, results: list) -> None:
+        if self.results_page is not None and request == self.youtube_search.latest:
+            self.results_page.set_results(results)
+
+    def _on_youtube_failed(self, request: int, message: str) -> None:
+        if self.results_page is not None and request == self.youtube_search.latest:
+            self.results_page.show_error(message)
+
+    def _on_youtube_thumbnail(self, request: int, video_id: str, data: bytes) -> None:
+        if self.results_page is not None and request == self.youtube_search.latest:
+            self.results_page.set_thumbnail(video_id, data)
+
+    def add_from_search(self, result: VideoResult) -> None:
+        """"Adicionar": baixa o vídeo escolhido e volta às listas."""
+        self.close_youtube_results()
+        self._enqueue_download(result.url)
+        if self._downloads:
+            self.view.show_message(f"Na fila de downloads: {result.title}", 8000)
+
+    def _open_in_browser(self, result: VideoResult) -> None:
+        QDesktopServices.openUrl(QUrl(result.url))
+
+    def close_youtube_results(self) -> None:
+        page, self.results_page = self.results_page, None
+        if page is None:
+            return
+        self.youtube_search.latest += 1  # respostas atrasadas são ignoradas
+        self.view.show_library(page)
+        page.deleteLater()
+        self.view.focus_url_bar()
 
     # --------------------------------------------------------------- separação
     # A fila é FIFO e o SeparationService processa uma música por vez, numa

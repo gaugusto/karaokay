@@ -95,7 +95,7 @@ def test_new_download_goes_to_end_of_queue(qapp, dirs):
 
     view.url_submitted.emit("https://youtu.be/abc")
     assert ctrl.downloader.urls == ["https://youtu.be/abc"]
-    assert not view.url_bar.isEnabled()
+    assert view.url_bar.isEnabled()  # continua livre para pesquisar e enfileirar
 
     song = add_song(music, "Canção [abc].webm")  # mtime atual: chegou por último
     ctrl.downloader.finished.emit(str(song))
