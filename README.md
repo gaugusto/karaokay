@@ -228,6 +228,7 @@ src/karaoke/
     song_delegate.py   cartões das músicas nas listas
     theme.py           tema escuro (cores, fonte e estilos)
     background.py      fundo animado do player
+    splitter.py        divisória arrastável com alça visível
     player_window.py   janela do player
     lyrics_search_dialog.py  busca manual de letra
   controllers/   ligam visões, modelos e serviços
