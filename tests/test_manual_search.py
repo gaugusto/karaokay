@@ -273,7 +273,7 @@ def test_search_page_takes_over_main_window(search_app):
     page = app.lyrics_search.view
     assert view.showing_page and view.stack.currentWidget() is page
     assert page.window() is view and not page.isWindow()
-    assert view.windowTitle() == "Karaokê — Buscar letra — Artista - Música"
+    assert view.windowTitle() == "Karaokay — Buscar letra — Artista - Música"
     assert page.artist_edit.hasFocus()
     view.focus_url_bar()  # Ctrl+L não faz nada com a busca na tela
     assert not view.url_bar.hasFocus()
@@ -301,7 +301,7 @@ def test_closing_search_page_returns_to_lists(search_app, how):
     assert app.lyrics_search is None and opened == []  # nada salvo, player não abre
     assert app.model.song(path).lyrics_path is None
     assert not view.showing_page and view.stack.count() == 1
-    assert view.windowTitle() == "Karaokê"
+    assert view.windowTitle() == "Karaokay"
     current = view.processed_panel.view.currentIndex()
     assert current.row() == app.processed.index_of(path).row()
     assert view.processed_panel.view.hasFocus()

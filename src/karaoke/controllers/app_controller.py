@@ -168,7 +168,7 @@ class AppController(QObject):
         if self.player is None:
             return True
         if self.player.is_playing and not dialogs.confirm(
-            self.view, "Fechar o Karaokê", "Uma música está tocando. Deseja fechar o programa?"
+            self.view, "Fechar o Karaokay", "Uma música está tocando. Deseja fechar o programa?"
         ):
             return False
         self.player.close()
