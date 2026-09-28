@@ -212,7 +212,7 @@ class PlayerWindow(QWidget):
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Karaokê — Player")
+        self.setWindowTitle("Karaokay — Player")
         self.resize(860, 700)
         self._lyrics = Lyrics()
         self._current_line = -1
@@ -373,7 +373,7 @@ class PlayerWindow(QWidget):
     # ------------------------------------------------------------ conteúdo
     def set_title(self, title: str) -> None:
         self.title_label.setText(title)
-        self.setWindowTitle(f"Karaokê — {title}")
+        self.setWindowTitle(f"Karaokay — {title}")
 
     def set_lyrics(self, lyrics: Lyrics) -> None:
         self._lyrics = lyrics
