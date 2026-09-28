@@ -151,6 +151,11 @@ no canto superior esquerdo, Esc ou Ctrl+W: as listas "A processar" e
   clicar num verso pula para ele. Letras sem sincronia aparecem sem destaque.
 - **Play/pause** (botão ou barra de espaço), barra de posição e setas ← → para
   voltar/avançar 5 s.
+- **Controles que se escondem**: depois de 3 s sem interação, os botões e o
+  cartão de controles somem (animação de 0,5 s), junto com o cursor, deixando
+  só o título e a letra. Qualquer movimento do mouse, clique, rolagem ou tecla
+  os traz de volta. Eles não somem enquanto o mouse está sobre eles, durante o
+  modo de sincronização ou arrastando a barra de posição.
 - **Tamanho da letra**: botões **A−** e **A+** ao lado do título (ou Ctrl − /
   Ctrl +; Ctrl 0 volta ao padrão), de 12 a 48 pt. O tamanho escolhido fica
   salvo e vale nas próximas vezes (em `~/.config/karaokay/karaoke.ini`).

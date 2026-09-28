@@ -2,13 +2,25 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QEasingCurve, QEvent, QPropertyAnimation, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QKeySequence, QShortcut
+from PySide6.QtCore import (
+    QAbstractAnimation,
+    QEasingCurve,
+    QEvent,
+    QPoint,
+    QPropertyAnimation,
+    QSize,
+    Qt,
+    QTimer,
+    QVariantAnimation,
+    Signal,
+)
+from PySide6.QtGui import QColor, QCursor, QFont, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractButton,
     QAbstractItemView,
     QApplication,
     QFrame,
+    QGraphicsOpacityEffect,
     QHBoxLayout,
     QLabel,
     QListWidget,
@@ -38,6 +50,9 @@ CURRENT_LINE_SCALE = 1.3          # verso atual 30% maior que os demais
 _settings = settings  # preferências do usuário (views/settings.py)
 DEFAULT_INSTRUMENTAL_VOLUME = 100  # %
 SCROLL_ANIMATION_MS = 350
+CONTROLS_IDLE_MS = 3000   # sem interação por este tempo, os controles somem
+CONTROLS_FADE_MS = 500    # duração da animação de sumir/aparecer
+CLICKABLE_OPACITY = 0.5   # ao voltar, os controles aceitam clique a partir daqui
 
 
 def format_time(seconds: float) -> str:
@@ -340,6 +355,8 @@ class PlayerWindow(QWidget):
         layout.addWidget(self.lyrics_note)
         layout.addWidget(self.lyrics_view, 1)
         layout.addWidget(controls)
+        self.controls_card = controls
+        self._setup_auto_hide()
 
         # Atalhos: espaço = play/pause, setas = voltar/avançar 5 s
         # Espaço e setas ficam em keyPressEvent: assim um botão ou slider com
@@ -416,6 +433,8 @@ class PlayerWindow(QWidget):
         """No modo de sincronização a letra fica parada no primeiro verso,
         marcado com ▶, esperando o clique."""
         self._sync_mode = active
+        if active:
+            self.show_controls()  # os controles ficam à vista enquanto sincroniza
         if self.sync_button.isChecked() != active:
             self.sync_button.blockSignals(True)
             self.sync_button.setChecked(active)
@@ -476,10 +495,172 @@ class PlayerWindow(QWidget):
             self._style_line(item, current=True)
         self.lyrics_view.center_on(max(index, 0))
 
+    # ------------------------------------------- controles que se escondem
+    _INTERACTIONS = {
+        QEvent.Type.MouseMove,
+        QEvent.Type.MouseButtonPress,
+        QEvent.Type.MouseButtonDblClick,
+        QEvent.Type.Wheel,
+        QEvent.Type.KeyPress,
+        QEvent.Type.TouchBegin,
+    }
+
+    def _setup_auto_hide(self) -> None:
+        """Sem interação por 3 s, os botões e o cartão de controles somem
+        (animação de 0,5 s); qualquer movimento, clique ou tecla os traz de
+        volta. O espaço deles continua reservado: a letra não pula."""
+        self.controls_idle_ms = CONTROLS_IDLE_MS
+        self._fading_widgets = [
+            self.close_button,
+            self.fullscreen_button,
+            self.effect_button,
+            self.font_smaller_button,
+            self.font_larger_button,
+            self.controls_card,
+        ]
+        self._opacity_effects = []
+        for widget in self._fading_widgets:
+            effect = QGraphicsOpacityEffect(widget)
+            effect.setOpacity(1.0)
+            effect.setEnabled(False)  # opaco: desenha direto, sem custo extra
+            widget.setGraphicsEffect(effect)
+            self._opacity_effects.append(effect)
+        self._controls_shown = True
+        self._controls_opacity = 1.0
+        self._controls_clickable = True
+        self._last_mouse_pos: QPoint | None = None
+        self._watching = False
+
+        self._idle_timer = QTimer(self)
+        self._idle_timer.setSingleShot(True)
+        self._idle_timer.timeout.connect(self._on_idle)
+        self._fade = QVariantAnimation(self)
+        self._fade.setDuration(CONTROLS_FADE_MS)
+        self._fade.setEasingCurve(QEasingCurve.Type.InOutCubic)
+        self._fade.valueChanged.connect(self._on_fade_value)
+        self._fade.finished.connect(self._on_fade_finished)
+
+    @property
+    def controls_visible(self) -> bool:
+        """Controles aparecendo (ou voltando a aparecer)."""
+        return self._controls_shown
+
+    @property
+    def controls_opacity(self) -> float:
+        return self._controls_opacity
+
+    def show_controls(self) -> None:
+        """Houve interação: mostra os controles e recomeça a contagem."""
+        if self.isVisible():
+            self._idle_timer.start(self.controls_idle_ms)
+        if self._controls_shown:
+            return
+        self._controls_shown = True
+        self.unsetCursor()
+        self._animate_controls(1.0)
+
+    def hide_controls(self) -> None:
+        if not self._controls_shown:
+            return
+        self._controls_shown = False
+        self._animate_controls(0.0)
+
+    def _keep_controls(self) -> bool:
+        """Situações em que os controles não devem sumir."""
+        return (
+            self._sync_mode
+            or self._slider_held
+            or any(w.underMouse() for w in self._fading_widgets)
+            or QApplication.activePopupWidget() is not None
+        )
+
+    def _on_idle(self) -> None:
+        if not self.isVisible():
+            return
+        if self._keep_controls():
+            self._idle_timer.start(self.controls_idle_ms)
+        else:
+            self.hide_controls()
+
+    def _animate_controls(self, target: float) -> None:
+        self._fade.stop()
+        if self._fade.duration() <= 0:
+            self._apply_controls_opacity(target)
+            self._on_fade_finished()
+            return
+        self._fade.setStartValue(self._controls_opacity)
+        self._fade.setEndValue(target)
+        self._fade.start()
+
+    def _on_fade_value(self, value) -> None:
+        # O Qt também emite valueChanged ao trocar início/fim/duração com a
+        # animação parada; só vale o que vem da animação rodando.
+        if self._fade.state() == QAbstractAnimation.State.Running:
+            self._apply_controls_opacity(value)
+
+    def _apply_controls_opacity(self, value) -> None:
+        self._controls_opacity = float(value)
+        for effect in self._opacity_effects:
+            effect.setOpacity(self._controls_opacity)
+            effect.setEnabled(self._controls_opacity < 1.0)
+        # Voltando: só aceitam clique quando já dá para vê-los (um clique
+        # no escuro não aciona um botão que ainda está invisível)
+        if self._controls_shown and self._controls_opacity >= CLICKABLE_OPACITY:
+            self._set_controls_clickable(True)
+
+    def _on_fade_finished(self) -> None:
+        if not self._controls_shown and self._controls_opacity <= 0.0:
+            self._set_controls_clickable(False)  # invisíveis não recebem cliques
+            self.setCursor(Qt.CursorShape.BlankCursor)  # nem o cursor fica na frente da letra
+
+    def _set_controls_clickable(self, clickable: bool) -> None:
+        if clickable == self._controls_clickable:
+            return  # mudar o atributo gera eventos de mouse sintéticos: só quando muda
+        self._controls_clickable = clickable
+        for widget in self._fading_widgets:
+            widget.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, not clickable)
+
+    def _is_interaction(self, obj, event) -> bool:
+        if event.type() not in self._INTERACTIONS or not self.isVisible():
+            return False
+        window = self.window()
+        if obj is not window.windowHandle() and not (
+            isinstance(obj, QWidget) and (obj is self or self.isAncestorOf(obj))
+        ):
+            return False
+        if event.type() == QEvent.Type.MouseMove:  # só movimento de verdade
+            pos = event.globalPosition().toPoint()
+            if pos == self._last_mouse_pos:
+                return False
+            self._last_mouse_pos = pos
+        return True
+
+    def _watch_interactions(self, watch: bool) -> None:
+        app = QApplication.instance()
+        if app is None or watch == self._watching:
+            return
+        self._watching = watch
+        if watch:
+            # O Qt manda movimentos "sintéticos" na posição atual do cursor
+            # quando algo muda embaixo dele (ex.: os controles somem); só
+            # conta como interação se o mouse sair desta posição.
+            self._last_mouse_pos = QCursor.pos()
+            app.installEventFilter(self)
+        else:
+            app.removeEventFilter(self)
+
+    def hideEvent(self, event) -> None:
+        super().hideEvent(event)
+        self._watch_interactions(False)
+        self._idle_timer.stop()
+
     # ------------------------------------------------------------ teclado
     def eventFilter(self, obj, event) -> bool:
         """Nos botões, ← → voltam/avançam 5 s (o Qt usaria para mover o foco).
-        Na janela principal (player embutido), acompanha a tela cheia."""
+        Na janela principal (player embutido), acompanha a tela cheia.
+        Qualquer interação na janela traz os controles de volta."""
+        if self._watching and self._is_interaction(obj, event):
+            self.show_controls()
         if obj is self._host_window and event.type() == QEvent.Type.WindowStateChange:
             self._update_fullscreen_button()
             return False
@@ -519,6 +700,8 @@ class PlayerWindow(QWidget):
             self._host_window = window  # embutido: observa a janela principal
             window.installEventFilter(self)
         self._update_fullscreen_button()
+        self._watch_interactions(True)
+        self.show_controls()  # começa visível; some após 3 s parado
         if not self._shown_once:
             self._shown_once = True
             self.play_button.setFocus()  # Espaço já toca/pausa ao abrir
