@@ -4,7 +4,7 @@ from conftest import add_song, add_stems
 from PySide6.QtCore import QObject, Signal
 
 from karaoke.controllers import AppController
-from karaoke.models import LyricsState, MusicLibraryModel, SongState
+from karaoke.models import LyricsState, MusicLibraryModel, SeparationMethod, SongState
 from karaoke.views import MainWindow
 
 
@@ -17,9 +17,11 @@ class FakeDownloader(QObject):
     def __init__(self):
         super().__init__()
         self.urls = []
+        self.methods = []
 
-    def start(self, url):
+    def start(self, url, method=None):
         self.urls.append(url)
+        self.methods.append(method)
         return True
 
 
@@ -41,7 +43,7 @@ class FakeSeparator(QObject):
         self.discarded = getattr(self, "discarded", []) + [str(path)]
 
 
-def make(dirs):
+def make(dirs, method=SeparationMethod.LOCAL):
     music, separated = dirs
     view = MainWindow()
     ctrl = AppController(
@@ -49,7 +51,9 @@ def make(dirs):
         model=MusicLibraryModel(music, separated),
         downloader=FakeDownloader(),
         separator=FakeSeparator(),
+        cloud_separator=FakeSeparator(),
     )
+    ctrl.choose_method = lambda parent, default: method  # sem diálogo nos testes
     return view, ctrl
 
 

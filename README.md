@@ -10,6 +10,7 @@ Aplicativo de karaokê para desktop, escrito em Python com interface em PySide6 
 - audio-separator com o modelo BS-RoFormer (separação de vocais)
 - ffmpeg instalado no sistema (Arch: `sudo pacman -S ffmpeg`)
 - Placa NVIDIA recomendada; na CPU a separação é bem mais lenta
+- Opcional: uma conta no [MVSEP](https://mvsep.com) para separar na nuvem
 
 ## Como rodar
 
@@ -34,6 +35,12 @@ com ou sem `https://`. O aplicativo baixa
 somente o áudio, na melhor qualidade disponível (sem reconversão), para a pasta
 `músicas/` na raiz do projeto. Essa pasta não é rastreada pelo git. Todas as
 músicas dela aparecem na lista da janela, que se atualiza automaticamente.
+
+Antes de baixar, o app pergunta o **método de processamento** da música
+(veja [Métodos de processamento](#métodos-de-processamento)); o último método
+escolhido já vem marcado, então basta **Enter** para repeti-lo, e **Cancelar**
+desiste de adicionar. O mesmo vale para o botão **Adicionar** da pesquisa no
+YouTube.
 
 A barra continua livre durante um download: outros links entram numa fila de
 downloads e são baixados um de cada vez, na ordem.
@@ -78,8 +85,8 @@ ele é fechado.
 A janela tem duas listas, uma sobre a outra:
 
 - **A processar** (em cima): músicas que ainda precisam ter os vocais separados, na ordem
-  de chegada. Elas são processadas por uma fila, uma de cada vez, nunca em
-  paralelo. A que está sendo processada aparece em primeiro, em negrito, com a
+  de chegada. Cada método de processamento tem a sua fila, que processa uma
+  música de cada vez; a fila local e a do MVSEP andam em paralelo. A que está sendo processada aparece em primeiro, em negrito, com a
   porcentagem do processamento.
 - **Processadas** (embaixo): músicas já separadas, em ordem alfabética. O
   campo **Filtrar processadas**, ao lado do título, mostra só as músicas com
@@ -93,7 +100,7 @@ próxima vez que o app abrir, na mesma proporção mesmo se a janela tiver outro
 tamanho.
 
 Assim que uma música termina de ser processada, ela sai de "A processar" e vai
-para "Processadas". A separação usa o BS-RoFormer
+para "Processadas". A separação local usa o BS-RoFormer
 (`model_bs_roformer_ep_317_sdr_12.9755.ckpt`), via
 [audio-separator](https://github.com/nomadkaraoke/python-audio-separator), e o
 resultado fica em `músicas/separadas/<nome da música>/vocais.flac` e
@@ -101,6 +108,31 @@ resultado fica em `músicas/separadas/<nome da música>/vocais.flac` e
 então qualquer formato funciona. Músicas colocadas à mão na pasta `músicas/`
 também entram na fila. Se o processamento de uma música falhar, ela fica no fim
 de "A processar" e é tentada de novo na próxima vez que o app abrir.
+
+### Métodos de processamento
+
+- **Local (BS-RoFormer)**: separa neste computador, como descrito acima. Usa
+  a placa de vídeo (ou a CPU) e não depende da internet.
+- **MVSEP (nuvem)**: envia o áudio para a [API do MVSEP](https://mvsep.com/pt/full_api),
+  que separa com o BS Roformer deles (modelo ver. 2025.07), e baixa os vocais
+  e o instrumental em FLAC para a mesma pasta `músicas/separadas/<nome>/`.
+  Não pesa no computador, mas depende da internet, da fila do site e dos
+  créditos da sua conta. Áudios `.mp3`, `.m4a`, `.flac` e `.wav` vão como
+  estão; os outros (como o `.webm` do YouTube) são convertidos para FLAC antes
+  do envio. O MVSEP não informa a porcentagem do processamento, então a barra
+  mostra o envio, uma estimativa enquanto o site processa e o download do
+  resultado; a barra de status diz a posição na fila do site.
+
+O método escolhido fica gravado nos metadados da música
+(`músicas/.metadados/<nome>.json`), então uma música que ficou na fila ao
+fechar o app volta para a mesma fila na próxima vez. Músicas colocadas à mão
+na pasta `músicas/` usam o método local.
+
+A **chave de API do MVSEP** (em mvsep.com, na página do seu perfil) é pedida
+na primeira vez que o MVSEP for escolhido e fica salva em
+`~/.config/karaokay/karaoke.ini`. Também dá para defini-la pela variável de
+ambiente `MVSEP_API_TOKEN` ou num arquivo `.mvsep-token` na raiz do projeto
+(fora do git). Nunca coloque a chave no código.
 
 ### Letras
 
@@ -257,7 +289,7 @@ na próxima vez que ele abrir.
 ```
 src/karaoke/
   models/        dados e estado, sem interface
-    song.py            Song e SongState (não separada, na fila, separando…)
+    song.py            Song, SongState (não separada, na fila…) e SeparationMethod
     library_model.py   MusicLibraryModel (QAbstractListModel das músicas)
     song_lists.py      listas filtradas: a processar e processadas
     lyrics.py          estado da letra e verificação de sincronia
@@ -280,7 +312,8 @@ src/karaoke/
   services/      integrações externas, rodando em segundo plano
     downloader.py      yt-dlp (download do áudio)
     youtube_search.py  pesquisa no YouTube (yt-dlp) e miniaturas
-    separator.py       audio-separator (BS-RoFormer)
+    separator.py       audio-separator (BS-RoFormer), separação local
+    mvsep.py           API do MVSEP, separação na nuvem
     lyrics.py          busca de letras no LRCLIB (pela página de busca)
     stem_player.py     mistura e reprodução de vocais + instrumental
     files.py           remoção dos arquivos de uma música

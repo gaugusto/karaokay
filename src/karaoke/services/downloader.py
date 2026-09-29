@@ -11,6 +11,8 @@ from urllib.parse import urlparse
 import yt_dlp
 from PySide6.QtCore import QObject, Signal
 
+from karaoke.models.song import METHOD_KEY
+
 YOUTUBE_HOSTS = {
     "youtube.com",
     "www.youtube.com",
@@ -79,12 +81,18 @@ class DownloadService(QObject):
     def busy(self) -> bool:
         return self._busy
 
-    def start(self, url: str) -> bool:
-        """Inicia o download; retorna False se já houver um em andamento."""
+    def start(self, url: str, method: str | None = None) -> bool:
+        """Inicia o download; retorna False se já houver um em andamento.
+
+        ``method`` (método de processamento escolhido) é guardado nos
+        metadados, junto com os dados do vídeo.
+        """
         if self._busy:
             return False
         self._busy = True
-        threading.Thread(target=self._run, args=(url.strip(),), name="download", daemon=True).start()
+        threading.Thread(
+            target=self._run, args=(url.strip(), method), name="download", daemon=True
+        ).start()
         return True
 
     def _hook(self, data: dict) -> None:
@@ -96,12 +104,16 @@ class DownloadService(QObject):
         elif data.get("status") == "finished":
             self.progress.emit(100.0)
 
-    def _run(self, url: str) -> None:
-        self._output_dir.mkdir(parents=True, exist_ok=True)
+    def _run(self, url: str, method: str | None = None) -> None:
+        # Baixa numa subpasta e só move para a biblioteca depois de salvar os
+        # metadados: assim, quando a música aparece na pasta (e o app a manda
+        # para a fila), o método de processamento escolhido já está gravado.
+        temp_dir = self._output_dir / ".baixando"
+        temp_dir.mkdir(parents=True, exist_ok=True)
         options = {
             # Melhor faixa só de áudio; sem reconversão, preserva a qualidade original
             "format": "bestaudio/best",
-            "outtmpl": str(self._output_dir / "%(title)s [%(id)s].%(ext)s"),
+            "outtmpl": str(temp_dir / "%(title)s [%(id)s].%(ext)s"),
             "noplaylist": True,
             # Mantém a data do arquivo como o momento do download (ordem de chegada),
             # em vez da data de publicação do vídeo
@@ -118,8 +130,10 @@ class DownloadService(QObject):
                 info = ydl.extract_info(url, download=False)
                 self.status.emit(f"Baixando: {info.get('title') or url}")
                 info = ydl.process_ie_result(info, download=True)
-                path = info.get("filepath") or ydl.prepare_filename(info)
-            self._save_metadata(Path(path), info)
+                downloaded = Path(info.get("filepath") or ydl.prepare_filename(info))
+            path = self._output_dir / downloaded.name
+            self._save_metadata(path, info, method)
+            downloaded.replace(path)
         except Exception as exc:  # yt-dlp levanta vários tipos de erro
             self._busy = False
             self.failed.emit(str(exc) or exc.__class__.__name__)
@@ -127,8 +141,9 @@ class DownloadService(QObject):
         self._busy = False
         self.finished.emit(str(path))
 
-    def _save_metadata(self, audio: Path, info: dict) -> None:
-        """Guarda os dados do vídeo usados depois para achar a letra."""
+    def _save_metadata(self, audio: Path, info: dict, method: str | None = None) -> None:
+        """Guarda os dados do vídeo usados depois para achar a letra e o
+        método de processamento escolhido."""
         if self._metadata_dir is None:
             return
         artists = info.get("artists") or ([info["artist"]] if info.get("artist") else [])
@@ -142,6 +157,8 @@ class DownloadService(QObject):
             "channel": info.get("channel") or info.get("uploader"),
             "duration": info.get("duration"),
         }
+        if method is not None:
+            data[METHOD_KEY] = str(getattr(method, "value", method))
         try:
             self._metadata_dir.mkdir(parents=True, exist_ok=True)
             target = self._metadata_dir / f"{audio.stem}.json"

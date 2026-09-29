@@ -132,7 +132,9 @@ def app(qapp, dirs):
     music, separated = dirs
     view = MainWindow()
     ctrl = AppController(view, model=MusicLibraryModel(music, separated), downloader=FakeDownloader(),
-                         separator=FakeSeparator(), youtube_search=FakeSearch())
+                         separator=FakeSeparator(), youtube_search=FakeSearch(),
+                         cloud_separator=FakeSeparator())
+    ctrl.choose_method = lambda parent, default: default  # sem diálogo nos testes
     ctrl.refresh_library()
     view.show()
     view.activateWindow()

@@ -35,3 +35,6 @@ media/
 *.wav
 *.ogg
 *.flac
+
+# Chave de API do MVSEP (nunca vai para o repositório)
+.mvsep-token
