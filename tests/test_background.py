@@ -5,7 +5,8 @@ import pytest
 from PySide6.QtGui import QColor
 
 from karaoke.views.background import AnimatedBackground
-from karaoke.views.theme import Colors
+from karaoke.views import theme as theme_module
+from karaoke.views.theme import ACCENT_THEMES, Colors
 
 
 def _luminance(c: QColor) -> float:
@@ -37,9 +38,13 @@ def _brightest(bg, bands):
     return worst
 
 
-def test_lyrics_stay_readable_over_the_effect(qapp):
-    """Mesmo com o brilho no máximo, no pior momento da animação:
-    verso atual (sempre no meio) >= 4,5:1 e demais versos >= 3:1 (texto grande)."""
+@pytest.mark.parametrize("theme", ACCENT_THEMES, ids=lambda t: t.name)
+def test_lyrics_stay_readable_over_the_effect(qapp, monkeypatch, theme):
+    """Mesmo com o brilho no máximo, no pior momento da animação e em qualquer
+    cor de destaque: verso atual (sempre no meio) >= 4,5:1 e demais versos
+    >= 3:1 (texto grande)."""
+    # só troca as cores lidas pelo fundo (sem QSS/fonte, que mudariam outros testes)
+    monkeypatch.setattr(theme_module, "_current", theme)
     bg = AnimatedBackground()
     bg.resize(860, 520)
     bg.show()

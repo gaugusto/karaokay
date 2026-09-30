@@ -126,3 +126,61 @@ def test_switching_theme_updates_open_windows(themed):
     assert view.play_button.icon().pixmap(26, 26).toImage() != old_play
     assert filter_edit.actions()[0].icon().pixmap(16, 16).toImage() != old_search
     theme.theme_changed.changed.disconnect(received.append)
+
+
+def _luminance(hex_code: str) -> float:
+    from PySide6.QtGui import QColor
+
+    c = QColor(hex_code)
+
+    def channel(v: int) -> float:
+        v /= 255
+        return v / 12.92 if v <= 0.03928 else ((v + 0.055) / 1.055) ** 2.4
+
+    return 0.2126 * channel(c.red()) + 0.7152 * channel(c.green()) + 0.0722 * channel(c.blue())
+
+
+def test_accent_themes_only_change_the_accent_and_background_tint():
+    from dataclasses import fields
+
+    accent_keys = {"ACCENT", "ACCENT_HOVER", "ACCENT_PRESSED", "ACCENT_DIM", "SURFACE_SELECTED"}
+    assert len(theme.ACCENT_THEMES) == 5
+    assert len({t.palette.ACCENT for t in theme.ACCENT_THEMES}) == 5
+    assert len({t.blobs for t in theme.ACCENT_THEMES}) == 5
+    assert set(theme.THEMES) == {t.name for t in theme.ACCENT_THEMES}
+    for t in theme.ACCENT_THEMES:
+        changed = {f.name for f in fields(t.palette)
+                   if getattr(t.palette, f.name) != getattr(theme.DARK.palette, f.name)}
+        assert changed <= accent_keys
+        assert (t.veil_alpha, t.card_alpha) == (theme.DARK.veil_alpha, theme.DARK.card_alpha)
+        # manchas do fundo: cores próprias, mesmas opacidades
+        assert [b.alpha for b in t.blobs] == [b.alpha for b in theme.DARK.blobs]
+        light, dark = sorted([_luminance(t.palette.ON_ACCENT), _luminance(t.palette.ACCENT)], reverse=True)
+        assert (light + 0.05) / (dark + 0.05) >= 3, t.name
+
+
+def test_next_theme_cycles():
+    seen = [theme.DARK]
+    for _ in range(len(theme.ACCENT_THEMES)):
+        seen.append(theme.next_theme(seen[-1]))
+    assert seen[:-1] == list(theme.ACCENT_THEMES) and seen[-1] is theme.DARK
+    assert theme.next_theme(theme.Theme("outro", theme.DARK.palette, (), 0, 0)) is theme.DARK
+
+
+def test_theme_button_cycles_accent_and_remembers(themed):
+    from karaoke.views import MainWindow
+    from karaoke.views.settings import THEME_KEY, saved_theme_name, settings
+
+    settings().remove(THEME_KEY)
+    try:
+        window = MainWindow()
+        accents = []
+        for t in theme.ACCENT_THEMES[1:] + theme.ACCENT_THEMES[:1]:
+            window.theme_button.click()
+            assert theme.current_theme() is t
+            assert saved_theme_name() == t.name
+            assert t.name in window.theme_button.toolTip()
+            accents.append(theme.Colors.ACCENT)
+        assert len(set(accents)) == 5 and theme.current_theme() is theme.DARK
+    finally:
+        settings().remove(THEME_KEY)

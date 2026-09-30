@@ -51,3 +51,16 @@ def last_separation_method() -> str | None:
 
 def set_last_separation_method(method: str) -> None:
     settings().setValue(LAST_METHOD_KEY, method)
+
+
+# ------------------------------------------------------------ aparência
+THEME_KEY = "aparencia/tema"
+
+
+def saved_theme_name() -> str | None:
+    value = settings().value(THEME_KEY, None)
+    return str(value) if value else None
+
+
+def set_saved_theme_name(name: str) -> None:
+    settings().setValue(THEME_KEY, name)
