@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from PySide6.QtCore import QAbstractItemModel, QEvent, QItemSelectionModel, QModelIndex, QRect, Qt, QTimer, Signal
+from PySide6.QtCore import QAbstractItemModel, QEvent, QItemSelectionModel, QModelIndex, QRect, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QIcon, QKeySequence, QPainter, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
@@ -329,8 +329,9 @@ class MainWindow(QMainWindow):
         self.theme_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.theme_button.setAccessibleName("Trocar cor de destaque")
         self.theme_button.clicked.connect(self._cycle_theme)
-        self._update_theme_tooltip()
-        theme_changed.changed.connect(self._update_theme_tooltip)
+        self.theme_button.setIconSize(QSize(16, 16))
+        self._update_theme_button()
+        theme_changed.changed.connect(self._update_theme_button)
         title_row = QHBoxLayout()
         title_row.addWidget(title)
         title_row.addStretch(1)
@@ -424,7 +425,8 @@ class MainWindow(QMainWindow):
         apply_theme(QApplication.instance(), theme)
         set_saved_theme_name(theme.name)
 
-    def _update_theme_tooltip(self, *_theme) -> None:
+    def _update_theme_button(self, *_theme) -> None:
+        self.theme_button.setIcon(QIcon(icon_pixmap("palette", Colors.ON_ACCENT, 16, 2.0)))
         self.theme_button.setToolTip(f"Cor de destaque: {current_theme().name} (clique para trocar)")
 
     # ------------------------------------------------------------ divisória

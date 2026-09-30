@@ -21,6 +21,13 @@ _PATHS = {
     "delete": '<path d="M4 7h16"/><path d="M10 11v6"/><path d="M14 11v6"/>'
               '<path d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12"/>'
               '<path d="M9 7V4.5A1.5 1.5 0 0 1 10.5 3h3A1.5 1.5 0 0 1 15 4.5V7"/>',
+    # Trocar cor de destaque (paleta de pintor)
+    "palette": '<path d="M12 2a10 10 0 0 0 0 20c1 0 1.7-.8 1.7-1.7 0-.4-.2-.8-.4-1.1-.3-.3-.4-.7-.4-1.1 0-.9.7-1.7 1.7-1.7h2'
+               'a5.5 5.5 0 0 0 5.5-5.5C22 6 17.5 2 12 2z"/>'
+               '<circle cx="7.5" cy="11.5" r="1.3" fill="{c}" stroke="none"/>'
+               '<circle cx="9" cy="7" r="1.3" fill="{c}" stroke="none"/>'
+               '<circle cx="14" cy="6.5" r="1.3" fill="{c}" stroke="none"/>'
+               '<circle cx="17.5" cy="10" r="1.3" fill="{c}" stroke="none"/>',
 }
 
 ICON_NAMES = tuple(_PATHS)
