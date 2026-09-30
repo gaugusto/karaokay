@@ -37,7 +37,7 @@ from karaoke.models.lrc import Lyrics
 from karaoke.views import dialogs
 from karaoke.views.settings import settings
 from karaoke.views.background import AnimatedBackground
-from karaoke.views.theme import Colors, media_icon
+from karaoke.views.theme import Colors, media_icon, theme_changed
 
 DEFAULT_VOCAL_VOLUME = 30         # %
 DEFAULT_LYRICS_FONT_SIZE = 20     # pt
@@ -290,6 +290,7 @@ class PlayerWindow(QWidget):
         self.play_button.setIconSize(QSize(26, 26))
         self.play_button.clicked.connect(self.toggle_requested)
         self.set_playing(False)
+        theme_changed.changed.connect(self._on_theme_changed)
 
         self.sync_button = QPushButton("Sincronizar")
         self.sync_button.setCheckable(True)
@@ -823,13 +824,21 @@ class PlayerWindow(QWidget):
         if size == self._font_size:
             return
         self._font_size = size
-        for i in range(self.lyrics_view.line_count()):
-            current = i == self._current_line or (self._sync_mode and i == self._sync_line)
-            self._style_line(self.lyrics_view.line_item(i), current=current)
+        self._restyle_lines()
         center = self._sync_line if self._sync_mode else self._current_line
         self.lyrics_view.center_on(max(center, 0), animate=False)
         self._update_font_buttons()
         _settings().setValue("player/lyrics_font_size", size)
+
+    def _restyle_lines(self) -> None:
+        for i in range(self.lyrics_view.line_count()):
+            current = i == self._current_line or (self._sync_mode and i == self._sync_line)
+            self._style_line(self.lyrics_view.line_item(i), current=current)
+
+    def _on_theme_changed(self, _theme) -> None:
+        """Refaz o que guardou cores do tema anterior (ícone e versos)."""
+        self.set_playing(self._playing)
+        self._restyle_lines()
 
     @staticmethod
     def _saved_font_size() -> int:

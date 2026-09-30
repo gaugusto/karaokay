@@ -30,15 +30,15 @@ LYRICS_LABELS = {
     LyricsState.FAILED: "erro ao buscar letra",
 }
 
-# Etiqueta (texto, cor) de cada situação
+# Etiqueta (texto, papel da cor no tema) de cada situação
 _LYRICS_BADGES = {
-    LyricsState.UNKNOWN: ("sem letra", Colors.TEXT_MUTED),
-    LyricsState.SEARCHING: ("buscando letra…", Colors.INFO),
-    LyricsState.SYNCED: ("letra sincronizada", Colors.SUCCESS),
-    LyricsState.PLAIN: ("letra sem sincronia", Colors.WARNING),
-    LyricsState.INSTRUMENTAL: ("instrumental", Colors.TEXT_SECONDARY),
-    LyricsState.NOT_FOUND: ("sem letra", Colors.TEXT_SECONDARY),
-    LyricsState.FAILED: ("erro na letra", Colors.DANGER),
+    LyricsState.UNKNOWN: ("sem letra", "TEXT_MUTED"),
+    LyricsState.SEARCHING: ("buscando letra…", "INFO"),
+    LyricsState.SYNCED: ("letra sincronizada", "SUCCESS"),
+    LyricsState.PLAIN: ("letra sem sincronia", "WARNING"),
+    LyricsState.INSTRUMENTAL: ("instrumental", "TEXT_SECONDARY"),
+    LyricsState.NOT_FOUND: ("sem letra", "TEXT_SECONDARY"),
+    LyricsState.FAILED: ("erro na letra", "DANGER"),
 }
 
 
@@ -88,7 +88,8 @@ def pending_badge(song: Song) -> tuple[str, str]:
 
 def processed_badge(song: Song) -> tuple[str, str]:
     """Etiqueta de uma música na lista "Processadas"."""
-    return _LYRICS_BADGES[song.lyrics_state]
+    text, role = _LYRICS_BADGES[song.lyrics_state]
+    return text, getattr(Colors, role)
 
 
 def queue_position(song: Song, row: int) -> int | None:

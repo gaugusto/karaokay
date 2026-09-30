@@ -14,6 +14,7 @@ def themed(qapp):
     style, palette, sheet, font = qapp.style().name(), qapp.palette(), qapp.styleSheet(), qapp.font()
     theme.apply_theme(qapp)
     yield qapp
+    theme.apply_theme(qapp, theme.DARK)
     qapp.setStyleSheet(sheet)
     qapp.setPalette(palette)
     qapp.setFont(font)
@@ -88,3 +89,40 @@ def test_lists_render_cards_without_errors(themed, dirs):
     # o cartão tem a altura prevista (58 + espaço)
     index = ctrl.pending.index(0, 0)
     assert view.pending_panel.view.visualRect(index).height() == 64
+
+
+def test_switching_theme_updates_open_windows(themed):
+    from dataclasses import replace
+
+    from PySide6.QtGui import QPalette
+
+    from pathlib import Path
+
+    from karaoke.models import Song, parse_lrc
+    from karaoke.views import PlayerWindow
+    from karaoke.views.main_window import FilterEdit
+
+    view = PlayerWindow()
+    view.set_lyrics(parse_lrc("[00:01.00]primeiro\n[00:02.00]segundo\n"))
+    view.highlight_line(0)
+    filter_edit = FilterEdit()
+    old_play = view.play_button.icon().pixmap(26, 26).toImage()
+    old_search = filter_edit.actions()[0].icon().pixmap(16, 16).toImage()
+    received = []
+    theme.theme_changed.changed.connect(received.append)
+
+    green = replace(theme.DARK, name="teste", palette=replace(
+        theme.DARK.palette, ACCENT="#00FF00", ACCENT_HOVER="#00EE00", ON_ACCENT="#000000",
+        SUCCESS="#123456", TEXT_MUTED="#FF00FF"))
+    theme.apply_theme(themed, green)
+
+    assert received == [green] and theme.current_theme() is green
+    assert theme.Colors.ACCENT == "#00FF00"
+    assert themed.palette().color(QPalette.ColorRole.Highlight).name() == "#00ff00"
+    assert "#00FF00" in themed.styleSheet() and theme.DARK.palette.ACCENT not in themed.styleSheet()
+    song = Song(Path("a.m4a"), Path("a"), lyrics_state=LyricsState.SYNCED)
+    assert processed_badge(song)[1] == "#123456"
+    assert view.lyrics_view.line_item(0).foreground().color().name() == "#00ee00"
+    assert view.play_button.icon().pixmap(26, 26).toImage() != old_play
+    assert filter_edit.actions()[0].icon().pixmap(16, 16).toImage() != old_search
+    theme.theme_changed.changed.disconnect(received.append)
