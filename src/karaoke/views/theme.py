@@ -8,7 +8,7 @@ lê ``Colors.X`` na hora de pintar já recebe a cor do tema atual.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from PySide6.QtCore import QObject, QPointF, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPalette, QPixmap, QPolygonF
@@ -57,7 +57,7 @@ class Theme:
 
 
 DARK = Theme(
-    name="escuro",
+    name="violeta",
     palette=Palette(
         BACKGROUND="#111318",
         SURFACE="#1A1D24",
@@ -92,13 +92,38 @@ DARK = Theme(
     card_alpha=225,
 )
 
-THEMES = {DARK.name: DARK}
+
+
+def _accent_variant(name: str, accent: str, hover: str, pressed: str, dim: str, selected: str) -> Theme:
+    """O tema escuro com outra cor de destaque (fundo animado não muda)."""
+    return replace(DARK, name=name, palette=replace(
+        DARK.palette, ACCENT=accent, ACCENT_HOVER=hover, ACCENT_PRESSED=pressed,
+        ACCENT_DIM=dim, SURFACE_SELECTED=selected))
+
+
+ROSA = _accent_variant("rosa", "#DB2777", "#EC4899", "#BE185D", "#5A1F3D", "#3A2230")
+AZUL = _accent_variant("azul", "#2563EB", "#3B82F6", "#1D4ED8", "#1E3A6B", "#1F2A44")
+VERDE_AGUA = _accent_variant("verde-água", "#0D9488", "#14B8A6", "#0F766E", "#134E4A", "#1A3533")
+LARANJA = _accent_variant("laranja", "#EA580C", "#F97316", "#C2410C", "#5A2A14", "#3A261E")
+
+# Ordem em que o botão do cabeçalho percorre as cores
+ACCENT_THEMES = (DARK, ROSA, AZUL, VERDE_AGUA, LARANJA)
+THEMES = {t.name: t for t in ACCENT_THEMES}
 
 _current = DARK
 
 
 def current_theme() -> Theme:
     return _current
+
+
+def next_theme(theme: Theme) -> Theme:
+    """Tema seguinte em ``ACCENT_THEMES`` (depois do último, volta ao primeiro)."""
+    try:
+        i = ACCENT_THEMES.index(theme)
+    except ValueError:
+        return ACCENT_THEMES[0]
+    return ACCENT_THEMES[(i + 1) % len(ACCENT_THEMES)]
 
 
 class _CurrentColors:
@@ -265,6 +290,18 @@ QPushButton:focus {{
 }}
 QPushButton:default:focus, QPushButton#primary:focus {{
     border: 2px solid {p.ON_ACCENT};
+}}
+QPushButton#themeButton {{
+    background: {p.ACCENT};
+    border: 2px solid {p.BORDER_STRONG};
+    border-radius: 14px;
+    min-width: 28px; max-width: 28px;
+    min-height: 28px; max-height: 28px;
+    padding: 0;
+}}
+QPushButton#themeButton:hover {{
+    background: {p.ACCENT_HOVER};
+    border-color: {p.TEXT_MUTED};
 }}
 QPushButton#playButton {{
     background: {p.ACCENT};

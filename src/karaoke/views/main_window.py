@@ -7,6 +7,7 @@ from collections.abc import Callable
 from PySide6.QtCore import QAbstractItemModel, QEvent, QItemSelectionModel, QModelIndex, QRect, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QIcon, QKeySequence, QPainter, QShortcut
 from PySide6.QtWidgets import (
+    QApplication,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -23,8 +24,8 @@ from PySide6.QtWidgets import (
 from karaoke.views.splitter import GripSplitter
 from karaoke.models import MusicLibraryModel
 from karaoke.views.icons import icon_pixmap
-from karaoke.views.theme import Colors, theme_changed
-from karaoke.views.settings import settings
+from karaoke.views.theme import Colors, apply_theme, current_theme, next_theme, theme_changed
+from karaoke.views.settings import set_saved_theme_name, settings
 from karaoke.views.song_delegate import PendingSongDelegate, ProcessedSongDelegate, RowAction, song_tooltip
 
 
@@ -322,6 +323,18 @@ class MainWindow(QMainWindow):
         title.setObjectName("appTitle")
         subtitle = QLabel("Cole um link do YouTube ou pesquise pelo nome da música")
         subtitle.setObjectName("appSubtitle")
+        # Bolinha na cor de destaque: cada clique passa para a próxima cor
+        self.theme_button = QPushButton()
+        self.theme_button.setObjectName("themeButton")
+        self.theme_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.theme_button.setAccessibleName("Trocar cor de destaque")
+        self.theme_button.clicked.connect(self._cycle_theme)
+        self._update_theme_tooltip()
+        theme_changed.changed.connect(self._update_theme_tooltip)
+        title_row = QHBoxLayout()
+        title_row.addWidget(title)
+        title_row.addStretch(1)
+        title_row.addWidget(self.theme_button)
 
         # Barra de links no topo
         self.url_bar = QLineEdit()
@@ -369,7 +382,7 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(self.library_page)
         layout.setContentsMargins(28, 22, 28, 16)
         layout.setSpacing(14)
-        layout.addWidget(title)
+        layout.addLayout(title_row)
         layout.addWidget(subtitle)
         layout.addSpacing(4)
         layout.addLayout(url_row)
@@ -404,6 +417,15 @@ class MainWindow(QMainWindow):
 
         # Definido pelo controlador: decide se a janela pode fechar
         self.close_guard: Callable[[], bool] | None = None
+
+    # ------------------------------------------------------------------ tema
+    def _cycle_theme(self) -> None:
+        theme = next_theme(current_theme())
+        apply_theme(QApplication.instance(), theme)
+        set_saved_theme_name(theme.name)
+
+    def _update_theme_tooltip(self, *_theme) -> None:
+        self.theme_button.setToolTip(f"Cor de destaque: {current_theme().name} (clique para trocar)")
 
     # ------------------------------------------------------------ divisória
     def splitter_ratio(self) -> float:
