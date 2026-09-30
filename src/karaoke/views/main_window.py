@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
 from karaoke.views.splitter import GripSplitter
 from karaoke.models import MusicLibraryModel
 from karaoke.views.icons import icon_pixmap
-from karaoke.views.theme import Colors
+from karaoke.views.theme import Colors, theme_changed
 from karaoke.views.settings import settings
 from karaoke.views.song_delegate import PendingSongDelegate, ProcessedSongDelegate, RowAction, song_tooltip
 
@@ -210,8 +210,12 @@ class FilterEdit(QLineEdit):
         super().__init__(parent)
         self.setObjectName("filterBar")
         self.setClearButtonEnabled(True)
-        self.addAction(QIcon(icon_pixmap("search", Colors.TEXT_MUTED, 16, 2.0)),
-                       QLineEdit.ActionPosition.LeadingPosition)
+        self._search_action = self.addAction(QIcon(), QLineEdit.ActionPosition.LeadingPosition)
+        self._update_icon()
+        theme_changed.changed.connect(self._update_icon)
+
+    def _update_icon(self, *_theme) -> None:
+        self._search_action.setIcon(QIcon(icon_pixmap("search", Colors.TEXT_MUTED, 16, 2.0)))
 
     def focusInEvent(self, event) -> None:
         super().focusInEvent(event)

@@ -13,31 +13,25 @@ from PySide6.QtCore import QPointF, QRectF, Qt, QTimer
 from PySide6.QtGui import QColor, QLinearGradient, QPainter, QRadialGradient
 from PySide6.QtWidgets import QWidget
 
-from karaoke.views.theme import Colors
+from karaoke.views.theme import Colors, current_theme
 
 FRAME_MS = 33  # ~30 quadros por segundo
 
 
 @dataclass(frozen=True)
 class _Blob:
-    color: str
     radius: float  # fração do maior lado da janela
     speed: float   # voltas por minuto, aproximadamente
     phase: float
-    alpha: int     # opacidade no centro da mancha (0–255), em repouso
 
 
-# Opacidades escolhidas medindo o contraste da letra no pior momento da
-# animação (ver tests/test_background.py).
+# Movimento de cada mancha; cor e opacidade vêm do tema (Theme.blobs)
 BLOBS = (
-    _Blob("#6D28D9", 0.55, 1.6, 0.0, 56),  # violeta
-    _Blob("#1D4ED8", 0.50, 1.2, 2.1, 48),  # índigo
-    _Blob("#0F766E", 0.45, 1.9, 4.2, 44),  # azul-petróleo
-    _Blob("#9D174D", 0.40, 1.4, 5.3, 32),  # magenta escuro
+    _Blob(0.55, 1.6, 0.0),
+    _Blob(0.50, 1.2, 2.1),
+    _Blob(0.45, 1.9, 4.2),
+    _Blob(0.40, 1.4, 5.3),
 )
-
-# Véu escuro na faixa central (onde fica o verso atual), em fração da altura
-VEIL_ALPHA = 150
 
 
 class AnimatedBackground(QWidget):
@@ -117,12 +111,13 @@ class AnimatedBackground(QWidget):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         size = max(rect.width(), rect.height())
         boost = 1.0 + 0.6 * self._level
-        for blob, center in zip(BLOBS, self.blob_centers()):
+        theme = current_theme()
+        for blob, tint, center in zip(BLOBS, theme.blobs, self.blob_centers()):
             radius = size * blob.radius * (1.0 + 0.12 * self._level)
             gradient = QRadialGradient(center, radius)
-            core = QColor(blob.color)
-            core.setAlpha(min(255, int(blob.alpha * boost)))
-            edge = QColor(blob.color)
+            core = QColor(tint.color)
+            core.setAlpha(min(255, int(tint.alpha * boost)))
+            edge = QColor(tint.color)
             edge.setAlpha(0)
             gradient.setColorAt(0.0, core)
             gradient.setColorAt(1.0, edge)
@@ -133,7 +128,7 @@ class AnimatedBackground(QWidget):
         clear = QColor(Colors.BACKGROUND)
         clear.setAlpha(0)
         dark = QColor(Colors.BACKGROUND)
-        dark.setAlpha(VEIL_ALPHA)
+        dark.setAlpha(theme.veil_alpha)
         veil.setColorAt(0.0, clear)
         veil.setColorAt(0.30, dark)
         veil.setColorAt(0.70, dark)
