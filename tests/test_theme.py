@@ -140,18 +140,21 @@ def _luminance(hex_code: str) -> float:
     return 0.2126 * channel(c.red()) + 0.7152 * channel(c.green()) + 0.0722 * channel(c.blue())
 
 
-def test_accent_themes_only_change_the_accent():
+def test_accent_themes_only_change_the_accent_and_background_tint():
     from dataclasses import fields
 
     accent_keys = {"ACCENT", "ACCENT_HOVER", "ACCENT_PRESSED", "ACCENT_DIM", "SURFACE_SELECTED"}
     assert len(theme.ACCENT_THEMES) == 5
     assert len({t.palette.ACCENT for t in theme.ACCENT_THEMES}) == 5
+    assert len({t.blobs for t in theme.ACCENT_THEMES}) == 5
     assert set(theme.THEMES) == {t.name for t in theme.ACCENT_THEMES}
     for t in theme.ACCENT_THEMES:
         changed = {f.name for f in fields(t.palette)
                    if getattr(t.palette, f.name) != getattr(theme.DARK.palette, f.name)}
         assert changed <= accent_keys
-        assert (t.blobs, t.veil_alpha, t.card_alpha) == (theme.DARK.blobs, theme.DARK.veil_alpha, theme.DARK.card_alpha)
+        assert (t.veil_alpha, t.card_alpha) == (theme.DARK.veil_alpha, theme.DARK.card_alpha)
+        # manchas do fundo: cores próprias, mesmas opacidades
+        assert [b.alpha for b in t.blobs] == [b.alpha for b in theme.DARK.blobs]
         light, dark = sorted([_luminance(t.palette.ON_ACCENT), _luminance(t.palette.ACCENT)], reverse=True)
         assert (light + 0.05) / (dark + 0.05) >= 3, t.name
 

@@ -93,18 +93,26 @@ DARK = Theme(
 )
 
 
+def _accent_variant(name: str, accent: str, hover: str, pressed: str, dim: str, selected: str,
+                    blob_colors: tuple[str, str, str, str]) -> Theme:
+    """O tema escuro com outra cor de destaque. As manchas do fundo animado
+    trocam de cor (tons vizinhos do destaque) mas mantêm as opacidades."""
+    return replace(
+        DARK, name=name,
+        palette=replace(DARK.palette, ACCENT=accent, ACCENT_HOVER=hover, ACCENT_PRESSED=pressed,
+                        ACCENT_DIM=dim, SURFACE_SELECTED=selected),
+        blobs=tuple(BlobTint(color, tint.alpha) for color, tint in zip(blob_colors, DARK.blobs)))
 
-def _accent_variant(name: str, accent: str, hover: str, pressed: str, dim: str, selected: str) -> Theme:
-    """O tema escuro com outra cor de destaque (fundo animado não muda)."""
-    return replace(DARK, name=name, palette=replace(
-        DARK.palette, ACCENT=accent, ACCENT_HOVER=hover, ACCENT_PRESSED=pressed,
-        ACCENT_DIM=dim, SURFACE_SELECTED=selected))
 
-
-ROSA = _accent_variant("rosa", "#DB2777", "#EC4899", "#BE185D", "#5A1F3D", "#3A2230")
-AZUL = _accent_variant("azul", "#2563EB", "#3B82F6", "#1D4ED8", "#1E3A6B", "#1F2A44")
-VERDE_AGUA = _accent_variant("verde-água", "#0D9488", "#14B8A6", "#0F766E", "#134E4A", "#1A3533")
-LARANJA = _accent_variant("laranja", "#EA580C", "#F97316", "#C2410C", "#5A2A14", "#3A261E")
+ROSA = _accent_variant("rosa", "#DB2777", "#EC4899", "#BE185D", "#5A1F3D", "#3A2230",
+                       ("#BE185D", "#7E22CE", "#9F1239", "#86198F"))  # rosa, roxo, carmim, fúcsia
+AZUL = _accent_variant("azul", "#2563EB", "#3B82F6", "#1D4ED8", "#1E3A6B", "#1F2A44",
+                       ("#1E3A8A", "#312E81", "#164E63", "#4C1D95"))  # azul, índigo, ciano, violeta (tons mais escuros:
+                       # o verso atual em azul precisa de contraste sobre o fundo azulado)
+VERDE_AGUA = _accent_variant("verde-água", "#0D9488", "#14B8A6", "#0F766E", "#134E4A", "#1A3533",
+                             ("#0F766E", "#0E7490", "#047857", "#1D4ED8"))  # petróleo, ciano, esmeralda, azul
+LARANJA = _accent_variant("laranja", "#EA580C", "#F97316", "#C2410C", "#5A2A14", "#3A261E",
+                          ("#C2410C", "#B91C1C", "#B45309", "#9D174D"))  # laranja, vermelho, âmbar, magenta
 
 # Ordem em que o botão do cabeçalho percorre as cores
 ACCENT_THEMES = (DARK, ROSA, AZUL, VERDE_AGUA, LARANJA)
