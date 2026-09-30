@@ -23,6 +23,7 @@ class Colors:
     ACCENT_HOVER = "#A07BFA"
     ACCENT_PRESSED = "#7444E8"
     ACCENT_DIM = "#3A2F63"
+    ON_ACCENT = "#FFFFFF"       # texto/ícones sobre o violeta
     SUCCESS = "#22C55E"
     WARNING = "#F59E0B"
     INFO = "#38BDF8"
@@ -51,11 +52,11 @@ def _palette() -> QPalette:
         QPalette.ColorRole.Button: Colors.SURFACE_RAISED,
         QPalette.ColorRole.ButtonText: Colors.TEXT,
         QPalette.ColorRole.Highlight: Colors.ACCENT,
-        QPalette.ColorRole.HighlightedText: "#FFFFFF",
+        QPalette.ColorRole.HighlightedText: Colors.ON_ACCENT,
         QPalette.ColorRole.ToolTipBase: Colors.SURFACE,
         QPalette.ColorRole.ToolTipText: Colors.TEXT,
         QPalette.ColorRole.Link: Colors.ACCENT_HOVER,
-        QPalette.ColorRole.BrightText: "#FFFFFF",
+        QPalette.ColorRole.BrightText: Colors.ON_ACCENT,
     }
     for role, value in roles.items():
         p.setColor(role, QColor(value))
@@ -148,7 +149,7 @@ QPushButton:checked {{
 QPushButton:default, QPushButton#primary {{
     background: {Colors.ACCENT};
     border: 1px solid {Colors.ACCENT};
-    color: #FFFFFF;
+    color: {Colors.ON_ACCENT};
 }}
 QPushButton:default:hover, QPushButton#primary:hover {{
     background: {Colors.ACCENT_HOVER};
@@ -168,7 +169,7 @@ QPushButton:focus {{
     border: 2px solid {Colors.ACCENT_HOVER};
 }}
 QPushButton:default:focus, QPushButton#primary:focus {{
-    border: 2px solid #FFFFFF;
+    border: 2px solid {Colors.ON_ACCENT};
 }}
 QPushButton#playButton {{
     background: {Colors.ACCENT};
@@ -185,7 +186,7 @@ QPushButton#playButton:pressed {{
     background: {Colors.ACCENT_PRESSED};
 }}
 QPushButton#playButton:focus {{
-    border: 3px solid #FFFFFF;
+    border: 3px solid {Colors.ON_ACCENT};
 }}
 QPushButton#playButton:disabled {{
     background: {Colors.ACCENT_DIM};
@@ -271,7 +272,7 @@ QSlider::sub-page:horizontal {{
     border-radius: 3px;
 }}
 QSlider::handle:horizontal {{
-    background: #FFFFFF;
+    background: {Colors.ON_ACCENT};
     width: 16px;
     height: 16px;
     margin: -5px 0;
@@ -279,7 +280,7 @@ QSlider::handle:horizontal {{
 }}
 QSlider::handle:horizontal:focus {{
     background: {Colors.ACCENT_HOVER};
-    border: 2px solid #FFFFFF;
+    border: 2px solid {Colors.ON_ACCENT};
 }}
 QSlider::handle:horizontal:hover {{
     background: {Colors.ACCENT_HOVER};
@@ -377,7 +378,7 @@ def apply_theme(app: QApplication) -> None:
     app.setStyleSheet(STYLESHEET)
 
 
-def media_icon(kind: str, size: int = 64, fill: str = "#FFFFFF") -> QIcon:
+def media_icon(kind: str, size: int = 64, fill: str = Colors.ON_ACCENT) -> QIcon:
     """Ícones de play/pause desenhados na cor pedida (os do sistema são
     escuros e somem sobre o botão violeta)."""
     pixmap = QPixmap(size, size)

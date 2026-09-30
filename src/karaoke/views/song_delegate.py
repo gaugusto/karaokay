@@ -223,7 +223,7 @@ class _CardDelegate(QStyledItemDelegate):
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(color(Colors.ACCENT if active else Colors.SURFACE_RAISED))
             painter.drawEllipse(circle)
-            painter.setPen(color("#FFFFFF" if active else Colors.TEXT_SECONDARY))
+            painter.setPen(color(Colors.ON_ACCENT if active else Colors.TEXT_SECONDARY))
             small = QFont(option.font)
             small.setBold(True)
             painter.setFont(small)
