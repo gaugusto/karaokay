@@ -360,3 +360,34 @@ def test_client_talks_to_the_api(api, tmp_path, monkeypatch):
 
     with pytest.raises(MvsepError, match="inválida"):
         MvsepClient("chave-ruim", base_url=f"{api}/api").create(audio)
+
+
+# ------------------------------------------------------------------ diálogo
+def test_method_dialog_shows_full_texts_and_returns_choice(qapp):
+    from PySide6.QtCore import QTimer
+
+    from karaoke.views import dialogs
+
+    dialog = dialogs.SeparationMethodDialog(None, SeparationMethod.MVSEP)
+    dialog.show()
+    QApplication.processEvents()
+    for method, button in dialog.buttons.items():
+        assert button.text().startswith(method.label)
+        assert button.sizeHint().width() <= button.width()  # nada cortado
+    assert dialog.buttons[SeparationMethod.MVSEP].isDefault()  # Enter repete a última
+    dialog.close()
+
+    def click_local():
+        shown = next(w for w in QApplication.topLevelWidgets()
+                     if isinstance(w, dialogs.SeparationMethodDialog) and w.isVisible())
+        shown.buttons[SeparationMethod.LOCAL].click()
+
+    QTimer.singleShot(0, click_local)
+    assert dialogs.choose_separation_method(None, SeparationMethod.MVSEP) is SeparationMethod.LOCAL
+
+    def cancel():
+        next(w for w in QApplication.topLevelWidgets()
+             if isinstance(w, dialogs.SeparationMethodDialog) and w.isVisible()).cancel_button.click()
+
+    QTimer.singleShot(0, cancel)
+    assert dialogs.choose_separation_method(None, SeparationMethod.LOCAL) is None
