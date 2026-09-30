@@ -51,17 +51,27 @@ class MvsepError(RuntimeError):
 def pick_stems(files: list[dict]) -> tuple[dict, dict]:
     """Entre os arquivos do resultado, (vocais, instrumental).
 
-    O MVSEP nomeia os arquivos como "Vocals"/"Instrumental" (ou dentro do nome
-    do arquivo baixado); a comparação ignora maiúsculas.
+    O MVSEP nomeia os arquivos como "Vocals" e "Instrumental" — ou "Other",
+    que é o que sobra sem os vocais (é assim no BS Roformer). Vale o nome do
+    arquivo; sem ele, o link. A comparação ignora maiúsculas.
     """
+
+    def kind(text: str) -> str | None:
+        text = text.casefold().replace("_", " ").replace("-", " ")
+        if any(word in text for word in ("instrum", "other", "no vocals", "minus", "karaoke")):
+            return "instrumental"
+        if "vocal" in text:
+            return "vocals"
+        return None
+
     vocals = instrumental = None
     for item in files:
-        text = " ".join(
-            str(item.get(key) or "") for key in ("type", "name", "download_url", "url")
-        ).casefold()
-        if "instrum" in text:
+        name = " ".join(str(item.get(key) or "") for key in ("type", "name"))
+        url = str(item.get("download_url") or item.get("url") or "")
+        found = kind(name) or kind(Path(urllib.parse.urlparse(url).path).stem)
+        if found == "instrumental":
             instrumental = instrumental or item
-        elif "vocal" in text:
+        elif found == "vocals":
             vocals = vocals or item
     if vocals is None or instrumental is None:
         names = ", ".join(str(f.get("name") or f.get("type") or "?") for f in files) or "nada"

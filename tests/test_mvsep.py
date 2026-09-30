@@ -172,6 +172,13 @@ def test_pick_stems():
         {"download_url": "https://x/musica_instrum.flac"},
     ])
     assert "vocals" in vocals["download_url"]
+    # BS Roformer devolve "Vocals" e "Other" (o instrumental); o link com
+    # "Vocals" no nome do arquivo original não confunde a escolha
+    vocals, instrumental = pick_stems([
+        {"name": "Vocals", "download_url": "https://x/Pink_Floyd_Time_vocals.flac"},
+        {"name": "Other", "download_url": "https://x/Pink_Floyd_Time_other.flac"},
+    ])
+    assert vocals["name"] == "Vocals" and instrumental["name"] == "Other"
     with pytest.raises(MvsepError, match="não devolveu"):
         pick_stems([{"name": "Drums", "download_url": "https://x/d.flac"}])
 
