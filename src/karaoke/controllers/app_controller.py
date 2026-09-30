@@ -11,12 +11,14 @@ from karaoke import paths
 from karaoke.models import (
     LyricsState,
     MusicLibraryModel,
+    SeparationMethod,
     SongState,
     pending_songs,
     processed_songs,
 )
 from karaoke.services import (
     DownloadService,
+    MvsepSeparationService,
     SeparationService,
     VideoResult,
     YouTubeSearchService,
@@ -27,6 +29,7 @@ from karaoke.services import (
 from karaoke.controllers.lyrics_search_controller import LyricsSearchController
 from karaoke.controllers.player_controller import PlayerController
 from karaoke.views import MainWindow, PlayerWindow, YouTubeResultsPage, dialogs
+from karaoke.views import settings as prefs
 
 
 class AppController(QObject):
@@ -37,6 +40,7 @@ class AppController(QObject):
         downloader: DownloadService | None = None,
         separator: SeparationService | None = None,
         youtube_search: YouTubeSearchService | None = None,
+        cloud_separator: MvsepSeparationService | None = None,
         parent=None,
     ) -> None:
         super().__init__(parent)
@@ -48,13 +52,21 @@ class AppController(QObject):
         self.separator = separator or SeparationService(
             paths.MODELS_DIR, paths.SEPARATED_DIR / ".em-andamento", self
         )
+        # Segundo método: separação na nuvem pelo MVSEP (fila própria, em paralelo)
+        self.cloud_separator = cloud_separator or MvsepSeparationService(
+            paths.SEPARATED_DIR / ".em-andamento-mvsep", prefs.mvsep_api_token, parent=self
+        )
+        # Ao adicionar uma música, pergunta o método (trocável nos testes)
+        self.choose_method = dialogs.choose_separation_method
+        self.ask_mvsep_token = dialogs.ask_mvsep_token
 
         self.youtube_search = youtube_search or YouTubeSearchService(self)
         self.youtube_search.finished.connect(self._on_youtube_results)
         self.youtube_search.failed.connect(self._on_youtube_failed)
         self.youtube_search.thumbnail_ready.connect(self._on_youtube_thumbnail)
         self.results_page: YouTubeResultsPage | None = None
-        self._downloads: list[str] = []  # fila de links esperando o download atual
+        # fila de (link, método de processamento) esperando o download atual
+        self._downloads: list[tuple[str, SeparationMethod]] = []
         self._downloading = False
 
         self.pending = pending_songs(self.model, self)
@@ -75,11 +87,12 @@ class AppController(QObject):
         self.downloader.finished.connect(self._on_download_finished)
         self.downloader.failed.connect(self._on_download_failed)
 
-        self.separator.started.connect(self._on_separation_started)
-        self.separator.progress.connect(self.model.set_progress)
-        self.separator.status.connect(self.view.show_message)
-        self.separator.finished.connect(self._on_separation_finished)
-        self.separator.failed.connect(self._on_separation_failed)
+        for service in (self.separator, self.cloud_separator):
+            service.started.connect(self._on_separation_started)
+            service.progress.connect(self.model.set_progress)
+            service.status.connect(self.view.show_message)
+            service.finished.connect(self._on_separation_finished)
+            service.failed.connect(self._on_separation_failed)
 
         self.model.music_dir.mkdir(parents=True, exist_ok=True)
         self._watcher = QFileSystemWatcher([str(self.model.music_dir)], self)
@@ -147,6 +160,7 @@ class AppController(QObject):
         for song in songs:
             if song.state in (SongState.QUEUED, SongState.SEPARATING):
                 self.separator.discard(song.path)
+                self.cloud_separator.discard(song.path)
             errors += delete_paths(song.related_paths())
         self.refresh_library()
 
@@ -201,24 +215,43 @@ class AppController(QObject):
             return
         url = normalize_youtube_url(text)  # aceita também sem https://
         if url is not None:
+            method = self._ask_separation_method()
+            if method is None:
+                return  # cancelou: o link continua no campo
             self.view.clear_url()
             if self.results_page is not None:
                 self.close_youtube_results()  # colou um link na página de resultados
-            self._enqueue_download(url)
+            self._enqueue_download(url, method)
         elif looks_like_url(text):
             self.view.show_message("Isso não parece um link do YouTube.", 5000)
         else:
             self.search_youtube(text)
 
-    def _enqueue_download(self, url: str) -> None:
+    def _ask_separation_method(self) -> SeparationMethod | None:
+        """Pergunta o método de processamento (o último escolhido vem marcado).
+        Para o MVSEP sem chave configurada, pede a chave; None se cancelar."""
+        default = SeparationMethod.parse(prefs.last_separation_method())
+        method = self.choose_method(self.view, default)
+        if method is None:
+            return None
+        if method is SeparationMethod.MVSEP and not prefs.mvsep_api_token():
+            token = self.ask_mvsep_token(self.view)
+            if not token:
+                return None
+            prefs.set_mvsep_api_token(token)
+        prefs.set_last_separation_method(method.value)
+        return method
+
+    def _enqueue_download(self, url: str, method: SeparationMethod = SeparationMethod.LOCAL) -> None:
         """Um download por vez; os outros esperam na fila, na ordem pedida."""
-        if self._downloading or url in self._downloads:
-            if url not in self._downloads:
-                self._downloads.append(url)
+        queued = [u for u, _ in self._downloads]
+        if self._downloading or url in queued:
+            if url not in queued:
+                self._downloads.append((url, method))
             self.view.show_message(f"Na fila de downloads ({len(self._downloads)} esperando).", 5000)
             return
-        if not self.downloader.start(url):  # ocupado por fora do controle da fila
-            self._downloads.append(url)
+        if not self.downloader.start(url, method.value):  # ocupado por fora do controle da fila
+            self._downloads.append((url, method))
             return
         self._downloading = True
         self.view.set_download_running(True)
@@ -226,7 +259,7 @@ class AppController(QObject):
     def _start_next_download(self) -> None:
         self._downloading = False
         if self._downloads:
-            self._enqueue_download(self._downloads.pop(0))
+            self._enqueue_download(*self._downloads.pop(0))
 
     def _on_download_finished(self, path: str) -> None:
         self.view.set_download_running(False)
@@ -268,9 +301,12 @@ class AppController(QObject):
             self.results_page.set_thumbnail(video_id, data)
 
     def add_from_search(self, result: VideoResult) -> None:
-        """"Adicionar": baixa o vídeo escolhido e volta às listas."""
+        """"Adicionar": pergunta o método, baixa o vídeo escolhido e volta às listas."""
+        method = self._ask_separation_method()
+        if method is None:
+            return  # cancelou: continua na página de resultados
         self.close_youtube_results()
-        self._enqueue_download(result.url)
+        self._enqueue_download(result.url, method)
         if self._downloads:
             self.view.show_message(f"Na fila de downloads: {result.title}", 8000)
 
@@ -287,8 +323,11 @@ class AppController(QObject):
         self.view.focus_url_bar()
 
     # --------------------------------------------------------------- separação
-    # A fila é FIFO e o SeparationService processa uma música por vez, numa
-    # única thread; queue_position registra a ordem de entrada para a visão.
+    # Cada método tem sua fila FIFO (uma música por vez em cada uma): a local
+    # (SeparationService) e a do MVSEP (MvsepSeparationService), que rodam em
+    # paralelo. O método vem dos metadados, gravados no download; músicas sem
+    # registro (colocadas à mão na pasta) usam a separação local.
+    # queue_position registra a ordem de entrada para a visão.
     def _queue_separation(self, path: Path) -> None:
         song = self.model.song(path)
         if song is None or song.state is not SongState.NOT_SEPARATED:
@@ -296,7 +335,10 @@ class AppController(QObject):
         self._next_position += 1
         self.model.set_queue_position(path, self._next_position)
         self.model.set_state(path, SongState.QUEUED)
-        self.separator.enqueue(path, song.stems_dir)
+        if song.separation_method is SeparationMethod.MVSEP:
+            self.cloud_separator.enqueue(path, song.stems_dir)
+        else:
+            self.separator.enqueue(path, song.stems_dir)
 
     def _on_separation_started(self, path: str) -> None:
         self.model.set_progress(path, 0)

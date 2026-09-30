@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from enum import Enum, auto
 from pathlib import Path
@@ -22,6 +23,40 @@ class SongState(Enum):
     @property
     def is_busy(self) -> bool:
         return self in (SongState.QUEUED, SongState.SEPARATING)
+
+
+class SeparationMethod(str, Enum):
+    """Como os vocais são separados: no computador ou na nuvem (MVSEP)."""
+
+    LOCAL = "local"  # BS-RoFormer rodando aqui (audio-separator)
+    MVSEP = "mvsep"  # API do mvsep.com
+
+    @property
+    def label(self) -> str:
+        return "Local (BS-RoFormer)" if self is SeparationMethod.LOCAL else "MVSEP (nuvem)"
+
+    @classmethod
+    def parse(cls, value) -> "SeparationMethod":
+        """Valor salvo (texto) → método; qualquer coisa desconhecida é local."""
+        try:
+            return cls(value)
+        except ValueError:
+            return cls.LOCAL
+
+
+# Chave dos metadados (músicas/.metadados/<nome>.json) com o método escolhido
+METHOD_KEY = "separation_method"
+
+
+def read_separation_method(metadata_path: Path | None) -> SeparationMethod:
+    """Método escolhido ao adicionar a música; sem registro, local."""
+    if metadata_path is None:
+        return SeparationMethod.LOCAL
+    try:
+        data = json.loads(metadata_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return SeparationMethod.LOCAL
+    return SeparationMethod.parse(data.get(METHOD_KEY) if isinstance(data, dict) else None)
 
 
 def find_stem(folder: Path, name: str) -> Path | None:
@@ -47,6 +82,10 @@ class Song:
     @property
     def title(self) -> str:
         return self.path.stem
+
+    @property
+    def separation_method(self) -> SeparationMethod:
+        return read_separation_method(self.metadata_path)
 
     @property
     def vocals_path(self) -> Path | None:

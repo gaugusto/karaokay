@@ -352,6 +352,17 @@ QMenu::separator {{
 QMessageBox QPushButton {{
     min-width: 90px;
 }}
+QLabel#dialogTitle {{
+    font-size: 13pt;
+    font-weight: 700;
+    color: {Colors.TEXT};
+    padding-bottom: 2px;
+}}
+QPushButton#optionButton {{
+    text-align: left;
+    padding: 12px 18px;
+    font-weight: 400;
+}}
 """
 
 
